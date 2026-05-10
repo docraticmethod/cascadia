@@ -1,0 +1,112 @@
+# CLAUDE.md
+
+Opinionated agentic template. 
+
+Includes Anthropic SDK, traces directory, eval pattern, the orchestrator/subagent/skills shape. Reuse target is "another agentic harness". 
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Behavioral Instructions
+
+- Be concise. No preamble like "Great question" or "I'll help you with that."
+- State conclusions first, then reasoning if asked. Don't bury the answer.
+- Push back on bad ideas with reasoning, not deference.
+- Skip apologies for normal corrections.
+
+## Project Directives
+
+- For non-trivial decisions, surface 2–3 options with tradeoffs (cost, complexity, scalability) before recommending one. Skip if the choice is obvious.
+- Tag each significant decision with its business rationale: who benefits, what outcome it supports.
+- When something isn't working, name it explicitly. Don't paper over failures — diagnose, adjust, learn.
+- Note assumptions inline. Mark anything we're treating as given that could plausibly be wrong.
+- Flag scope cuts: when proposing a simpler version of something, say what we're not doing and what we'd do "with more time."
+- Prefer industry-standard patterns over clever ones. Document why if we deviate.
+
+## Scope
+Work only within this directory. Do not read, modify, or reference files outside the repo root.
+
+## Working with the Agent
+- Plan before execute: propose changes before creating/modifying files for any non-trivial task
+- Prefer small, reviewable diffs over large sweeps
+- Surface assumptions explicitly; ask when ambiguous rather than guessing
+- After each change, summarize what was done and what's next
+
+## Project Overview
+
+Express.js repo. The goal is to demonstrate clean, idiomatic Node.js API development with good engineering habits — small commits, tested code, clear decisions.
+
+- Runtime: Node 24
+- Module system: ESM (`"type": "module"` in package.json, `.js` extensions on all imports)
+- Framework: Express 5 (async errors propagate to error middleware automatically — no need to `next(err)`)
+
+## Build & Development Commands
+
+- Start: `node src/server.js`
+- Test: `npm test` (Node's built-in test runner via `node --test`; do not assume Jest APIs)
+- Run single test: `npm test -- --test-name-pattern=<name>`
+
+
+
+## Configuration
+
+Loaded from `.env` via `dotenv` at startup. Required vars:
+
+- ANTHROPIC_API_KEY: Anthropic API credentials, value is checked but not logged
+- PORT: HTTP port (default: `3000`), value is output by server
+- ENVIRONMENT: Runtime environment label, value is output by server
+
+## Endpoints
+
+Default base URL: `http://localhost:3000`.
+
+### `GET /health`
+Liveness check. Returns:
+```json
+{ "status": "ok", "uptime": <seconds>, "version": "<npm_package_version>" }
+```
+
+```bash
+curl -s http://localhost:3000/health
+```
+
+## Conventions
+
+- **Commits**: small, focused, conventional commit format (`feat:`, `fix:`, `test:`, `chore:`, etc.)
+- **Tests before features** where reasonable — write the failing test, then the implementation
+- **No comments** unless the WHY is non-obvious
+- **ESM imports** — always include `.js` extension on local imports
+
+## Context-Docs
+
+**Read this listing at the start of every session before acting on non-trivial tasks, and check the instructions by each entry to see if you need to read it first.** They carry standing context that is not reconstructable from the code alone.
+
+### App
+
+- [`context-docs/app/TODO.md`](context-docs/app/TODO.md) Read at startup to understand next steps / outstanding future tasks. 
+
+- [`context-docs/app/ENVIRONMENT.md`](context-docs/app/ENVIRONMENT.md) Instructions to Build Agentic Harness for Express NodeJS application.
+
+- [`context-docs/app/DECISIONS.md`](context-docs/app/DECISIONS.md) ADR log; the *why* behind choices that have a reasonable alternative. Append new entries here when a real fork-in-the-road decision is made. Read when touching an area that may have a prior decision, or before proposing a change with a reasonable alternative. 
+
+- [`context-docs/app/CUSTOMER.md`](context-docs/app/CUSTOMER.md) Will contain an explanation for the customer about the orchestrator, as well as slides generated after project is complete. Read at startup for consistency of "Explainable AI" understanding purpose or orchestrator. 
+
+
+
+### Template
+
+- [`context-docs/template/ARCHITECTURE_TEMPLATE.md`](context-docs/template/ARCHITECTURE_TEMPLATE.md)    Architecture Template, loaded by AI when generating [`context-docs/workflow/ARCHITECTURE.md`](context-docs/workflow/ARCHITECTURE.md) 
+
+
+- [`context-docs/template/GUARDRAIL_SPEC.md`](context-docs/template/GUARDRAIL_SPEC.md)  Reference System Instructions for Guardrails
+
+### Workflow
+
+- [`context-docs/workflow/REQUIREMENTS.md`](context-docs/workflow/REQUIREMENTS.md) Human Input Context Document, from data provided by Stakeholder 
+
+- [`context-docs/workflow/STRATEGY.md`](context-docs/workflow/STRATEGY.md) AI Generated STRATEGY Context Document
+
+- [`context-docs/workflow/ARCHITECTURE.md`](context-docs/workflow/ARCHITECTURE.md) AI Generated Architecture Context Document - built using [`context-docs/template/ARCHITECTURE_TEMPLATE.md`](context-docs/template/ARCHITECTURE_TEMPLATE.md) 
+
+- [`context-docs/workflow/SYSTEM_INSTRUCTIONS.md`](context-docs/workflow/SYSTEM_INSTRUCTIONS.md) AI Generated SYSTEM_INSTRUCTIONS Context Document
+
+
