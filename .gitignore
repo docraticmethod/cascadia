@@ -1,0 +1,16 @@
+#node
+node_modules/
+
+
+#environment
+
+.env
+.env.*
+
+#logs
+
+*.log
+
+#generated runtime output
+output/
+traces/
