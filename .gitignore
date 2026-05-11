@@ -14,3 +14,17 @@ node_modules/
 #generated runtime output
 output/
 traces/
+
+#claude code 
+.claude/
+
+
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# editor
+.vscode/
+.idea/
+*.swp

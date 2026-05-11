@@ -62,6 +62,11 @@ The Console does not currently load template files when generating ARCHITECTURE.
 Apply only to the architecture generation step. Strategy and system_instructions generation does not load templates.
 
 
+### architects note
+
+fixed above
+
+
   ### minor bug (TBD - don't fix until I tell you explicitly): 
 found on strategy tab but should be fixed on strategy/architecture/system_instructions tabs
   fix button is page width

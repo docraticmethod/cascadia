@@ -1,7 +1,7 @@
 # ARCHITECTURE.md
 
 ## Project type
-Meta-tool. The Console is a workflow harness for building other projects. It is not a reg-tech case evaluator and does not use the ARCHITECTURE_TEMPLATE / GUARDRAIL_SPEC patterns. See DECISIONS.md for rationale. Console's own `context-docs/template/` is removed; the Console reads template files from the target project via `TARGET_WORKFLOW`.
+Meta-tool. The Console is a workflow harness for building other projects. 
 
 ## Shape
 Single-page web application backed by a thin Node.js + Express server. The server reads and writes four markdown files in the target project's `context-docs/workflow/` directory and proxies AI generation calls to the Anthropic API.
@@ -10,8 +10,9 @@ Single-page web application backed by a thin Node.js + Express server. The serve
 The Console is portable. It does not own the workflow files it manages — they belong to whichever project the architect is building. The target is set in CONSOLE's `.env`:
 
 TARGET_WORKFLOW=/absolute/path/to/<project>/context-docs/workflow
+TARGET_TEMPLATE=/absolute/path/to/<project>/context-docs/template
 
-The four workflow files (REQUIREMENTS.md, STRATEGY.md, ARCHITECTURE.md, SYSTEM_INSTRUCTIONS.md) live at `${TARGET_WORKFLOW}/`. Template files (ARCHITECTURE_TEMPLATE.md, GUARDRAIL_SPEC.md) resolve to `${TARGET_WORKFLOW}/../template/` and are loaded into the prompt during ARCHITECTURE generation when present. Switching projects requires editing `.env` and restarting the server.
+The four workflow files (REQUIREMENTS.md, STRATEGY.md, ARCHITECTURE.md, SYSTEM_INSTRUCTIONS.md) live at `${TARGET_WORKFLOW}/`. Template files (ARCHITECTURE_TEMPLATE.md, GUARDRAIL_SPEC.md) resolve to `${TARGET_TEMPLATE}/` and are loaded into the prompt during ARCHITECTURE generation when present. Switching projects requires editing `.env` and restarting the server.
 
 ## Components
 
@@ -31,7 +32,7 @@ The four workflow files (REQUIREMENTS.md, STRATEGY.md, ARCHITECTURE.md, SYSTEM_I
 Per-target dispatch. Each generator receives `{ action, payload }`:
 
 - `generate('strategy', ...)` — loads REQUIREMENTS.md, calls Anthropic, returns generated STRATEGY content
-- `generate('architecture', ...)` — loads STRATEGY.md and (if present) ARCHITECTURE_TEMPLATE.md and GUARDRAIL_SPEC.md from the target's template directory, calls Anthropic, may return no-op
+- `generate('architecture', ...)` — loads STRATEGY.md and all .md files present in ${TARGET_TEMPLATE} (template filenames are not hardcoded; the directory contents are the templates)
 - `generate('system_instructions', ...)` — loads STRATEGY.md and ARCHITECTURE.md, calls Anthropic, returns generated SYSTEM_INSTRUCTIONS content
 
 `action` is `'add'` or `'edit'`. The generator builds the prompt accordingly so the AI produces a delta vs a revision. Action propagates into the response so the UI knows whether the new entry is a fresh CLI input or a context-refresh signal.
@@ -55,7 +56,7 @@ Cost note: every Submit produces two Anthropic calls (generate + judge). Prototy
 
 ### Document store (`src/docs.js`)
 - Reads/writes the four workflow .md files under `TARGET_WORKFLOW`
-- Resolves template files under `${TARGET_WORKFLOW}/../template/` for read-only loading
+- Resolves template files under `${TARGET_TEMPLATE}` for read-only loading
 - Atomic writes (write to temp + rename) to avoid partial files on crash
 - Rejects any path outside the allowed set
 
@@ -84,6 +85,8 @@ CONSOLE `.env`:
 - `PORT` — default 3000
 - `ENVIRONMENT` — runtime label
 - `TARGET_WORKFLOW` — absolute path to the target project's workflow directory
+- `TARGET_TEMPLATE` — absolute path to the target project's template directory
+
 
 ## Tests
 Deferred. CONSOLE's only verifiable behavior is plumbing (file read/write, API call returns, route shape). End-to-end correctness lives in the target project's tests and ultimately in whether Claude Code produces a working implementation from the generated SYSTEM_INSTRUCTIONS. Smoke tests may be added later if plumbing bugs become a problem.

@@ -8,7 +8,7 @@ Read REQUIREMENTS.md, STRATEGY.md, and ARCHITECTURE.md in `context-docs/workflow
 ## Build order
 
 ### Slice 1 — Server skeleton + health
-1. Test `src/server.js`: Express 5 app, ESM, dotenv, listen on `process.env.PORT || 3000`.
+1. Create `src/server.js`: Express 5 app, ESM, dotenv, listen on `process.env.PORT || 3000`.
 2. Implement `GET /health` returning `{ status: 'ok', uptime, version }`.
 3. Add the `import.meta.url === pathToFileURL(process.argv[1]).href` guard.
 4. Verify with `curl -s http://localhost:3000/health`.
@@ -18,7 +18,7 @@ Read REQUIREMENTS.md, STRATEGY.md, and ARCHITECTURE.md in `context-docs/workflow
 2. Resolve `TARGET_WORKFLOW` from env at startup; fail fast if unset or unreadable.
 3. Implement `readDoc(name)` and `writeDoc(name, content)` for the four allowed filenames: REQUIREMENTS.md, STRATEGY.md, ARCHITECTURE.md, SYSTEM_INSTRUCTIONS.md. Reject any other name.
 4. Writes are atomic: write to `<name>.tmp`, then rename.
-5. Add a `readTemplate(name)` for ARCHITECTURE_TEMPLATE.md and GUARDRAIL_SPEC.md, resolving to `${TARGET_WORKFLOW}/../template/`. Return `null` if missing — templates are optional per project.
+5. Add a readTemplate(name) and listTemplates() for files in TARGET_TEMPLATE. Template filenames are not hardcoded — the directory contents are the templates. Return null (or an empty list) if TARGET_TEMPLATE is unset, the directory is missing, or it's empty — templates are optional per project.
 
 ### Slice 3 — Document routes
 1. Add `GET /api/doc/:name` and `PUT /api/doc/:name` to server.js. Wire to docs.js.
@@ -36,7 +36,7 @@ Read REQUIREMENTS.md, STRATEGY.md, and ARCHITECTURE.md in `context-docs/workflow
 2. Implement three generators: `generateStrategy`, `generateArchitecture`, `generateSystemInstructions`.
 3. Each takes `{ action, payload }` where action is `'add'` or `'edit'` and payload is the upstream change.
 4. Each loads the upstream document(s) from `docs.js`, builds the system + user prompt, calls `anthropic.generate`, returns the generated content.
-5. `generateArchitecture` additionally loads ARCHITECTURE_TEMPLATE.md and GUARDRAIL_SPEC.md if present and includes them as context.
+5. `generateArchitecture` additionally loads all .md files present in `TARGET_TEMPLATE` and includes them as context. The directory contents are the templates; do not hardcode filenames. If `TARGET_TEMPLATE` is unset or empty, generation proceeds without templates (no error).
 6. Prompts must explicitly state ADD vs EDIT semantics so the AI returns a delta or a revision accordingly.
 
 ### Slice 6 — Inconsistency check
@@ -85,7 +85,7 @@ Read REQUIREMENTS.md, STRATEGY.md, and ARCHITECTURE.md in `context-docs/workflow
 
 ## Constraints
 - Single-user, localhost only. No auth.
-- Path traversal rejected; only the four workflow filenames + two template filenames are accessible.
+- Path traversal rejected. Reads are restricted to the four workflow filenames in TARGET_WORKFLOW plus any .md files in TARGET_TEMPLATE. Writes are restricted to the four workflow filenames only — template files are read-only.
 - Atomic writes only.
 - Never log the Anthropic API key.
 
