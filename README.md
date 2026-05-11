@@ -118,6 +118,7 @@ Open `http://localhost:3000`. The four tabs present the cascade layers for the t
 
 Cascadia assumes the target project's directory looks like this:
 
+```
 <target-project>/
 ├── context-docs/
 │   ├── workflow/
@@ -136,6 +137,7 @@ Cascadia assumes the target project's directory looks like this:
 ├── src/
 ├── data/
 └── ...
+```
 
 The four workflow files start empty. Cascadia populates them as the architect drives the cascade forward.
 
