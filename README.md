@@ -80,11 +80,14 @@ Pattern recognition acquired over a long engineering career is not obsolete. It 
 
 Cascadia is portable. It does not own the workflow files it manages — those belong to whichever project the architect is building. The target is set in Cascadia's `.env`:
 
+```
 TARGET_WORKFLOW=/absolute/path/to/<project>/context-docs/workflow
 TARGET_TEMPLATE=/absolute/path/to/<project>/context-docs/template
 ANTHROPIC_API_KEY=sk-...
 ANTHROPIC_MODEL=claude-opus-4-7
-PORT=3000
+PORT=3001
+ENVIRONMENT=LOCAL_CONSOLE
+```
 
 The variable names are fixed; the values are yours. Use any Anthropic model you prefer in `ANTHROPIC_MODEL`. Other LLM providers are not supported in the current prototype.
 
@@ -141,6 +144,57 @@ Cascadia assumes the target project's directory looks like this:
 
 The four workflow files start empty. Cascadia populates them as the architect drives the cascade forward.
 
+## Setting up a target project with Cascadia
+
+The `TARGET/` directory in this repo provides starter files for any project you
+want to drive with Cascadia. 
+
+To set up a new target project:
+
+1. Copy `TARGET/context-docs/` to your new project directory root.
+2. Choose a template from `TARGET/template-library-ga/` (stable) or
+   `TARGET/template-library-alpha/` (pre-release), and copy it into
+   `context-docs/template/` in your project.
+
+
+### Files provided in TARGET
+
+```
+TARGET/
+├── context-docs/
+│   ├── workflow/
+│   │   ├── REQUIREMENTS.md
+│   │   ├── STRATEGY.md
+│   │   ├── ARCHITECTURE.md
+│   │   └── SYSTEM_INSTRUCTIONS.md
+│   └── template/                   # empty; user pastes chosen template here
+├── template-library-ga/
+│   ├── ARCHITECTURE_TEMPLATE.md
+│   └── GUARDRAIL_SPEC.md
+└── template-library-alpha/
+    ├── ARCHITECTURE_TEMPLATE_AGENTIC_HARNESS.md
+    ├── ARCHITECTURE_TEMPLATE_GENERIC.md
+    └── GUARDRAIL_SPEC.md
+```
+
+### How to Use the Cascadia Console 
+
+Note: Submit triggers a generation that cascades downstream, so the UI requires two deliberate gestures before firing. The Unlock checkbox enables Edit/Add and disables Submit. The Lock checkbox disables Edit/Add and enables Submit. 
+
+1. Start the Cascadia Console server and open the web dashboard at `http://localhost:3001`.
+2. On the **Requirements** tab: check Unlock, click Edit, and enter your requirements.
+3. Check Lock and click Submit. Cascadia generates the Strategy and redirects to the Strategy tab.
+4. On the **Strategy** tab: if issues are flagged, click Fix and Cascadia will address them. Then Lock and Submit. Cascadia generates the Architecture and redirects to the Architecture tab.
+5. On the **Architecture** tab: if issues are flagged, click Fix and Cascadia will address them. Then Lock and Submit. Cascadia generates the System Instructions and redirects to the System Instructions tab.
+
+* If you change requirements mid-build, re-run the Cascade (steps 2-5 above); all workflow context docs will regenerate. Tell Claude Code to pick up the new  SYSTEM_INSTRUCTIONS. 
+
+### How to Use the Generated Context Docs
+
+1. Add a link to `context-docs/workflow/` in your project's `CLAUDE.md`.
+2. Direct Claude Code to use `context-docs/workflow/SYSTEM_INSTRUCTIONS.md` as its coding directions. `REQUIREMENTS.md`, `STRATEGY.md`, and `ARCHITECTURE.md` are informational.
+
+
 ## Tech stack
 
 - Node 24, ESM
@@ -148,6 +202,7 @@ The four workflow files start empty. Cascadia populates them as the architect dr
 - `@anthropic-ai/sdk`
 - Vanilla HTML/CSS/JS frontend, no build step
 - No database; Git in the target project owns versioning
+
 
 ## Status
 
