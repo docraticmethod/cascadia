@@ -146,15 +146,12 @@ The four workflow files start empty. Cascadia populates them as the architect dr
 
 ## Setting up a target project with Cascadia
 
-The `TARGET/` directory in this repo provides starter files for any project you
-want to drive with Cascadia. 
+The `TARGET/` directory in this repo provides starter Cascadia workflow and template files for the project you want to drive with Cascadia. 
 
 To set up a new target project:
 
 1. Copy `TARGET/context-docs/` to your new project directory root.
-2. Choose a template from `TARGET/template-library-ga/` (stable) or
-   `TARGET/template-library-alpha/` (pre-release), and copy it into
-   `context-docs/template/` in your project.
+2. Choose an optional architecture and guardrail template from `TARGET/template-library-ga/` (stable) or `TARGET/template-library-alpha/` (pre-release), and copy it into `context-docs/template/` in your project.
 
 
 ### Files provided in TARGET
@@ -187,7 +184,7 @@ Note: Submit triggers a generation that cascades downstream, so the UI requires 
 4. On the **Strategy** tab: if issues are flagged, click Fix and Cascadia will address them. Then Lock and Submit. Cascadia generates the Architecture and redirects to the Architecture tab.
 5. On the **Architecture** tab: if issues are flagged, click Fix and Cascadia will address them. Then Lock and Submit. Cascadia generates the System Instructions and redirects to the System Instructions tab.
 
-* If you change requirements mid-build, re-run the Cascade (steps 2-5 above); all workflow context docs will regenerate. Tell Claude Code to pick up the new  SYSTEM_INSTRUCTIONS. 
+If you change requirements mid-build, re-run the Cascade (steps 2-5 above); all workflow context docs will regenerate. Tell Claude Code to pick up the new  SYSTEM_INSTRUCTIONS. 
 
 ### How to Use the Generated Context Docs
 
