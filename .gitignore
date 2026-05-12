@@ -28,3 +28,6 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+#private notes
+scratchpad.txt
