@@ -1,4 +1,6 @@
-# Cascadia Console
+# Cascadia Console 
+
+## Agentic AI Coding Tool for Claude Code
 
 **Author:** Blake Rogers
 
@@ -6,7 +8,9 @@
 
 **LinkedIn:** https://www.linkedin.com/in/blakerogerz/
 
-A Node/Express tool that turns plain-English requirements into a complete system-instructions document Claude Code can execute without further prompting. Input requirements and Submit; Cascadia drafts a strategy, flags inconsistencies, and fixes them with one click. Strategy compiles into architecture via swappable templates, flags and fixes issues, then outputs system instructions into your target project. Edit any layer in the Console and everything downstream regenerates. Hand the system instructions to Claude Code and it builds the app.
+Cascadia Console turns plain-English requirements into a complete system-instructions document Claude Code can execute without further prompting. Input requirements and Submit; Cascadia drafts a strategy, flags inconsistencies, and fixes them with one click. Strategy compiles into architecture via swappable templates, flags and fixes issues, then outputs system instructions into your target project. Edit any layer in the Console and everything downstream regenerates. Hand the system instructions to Claude Code and it builds the app. 
+
+For building Node/Express with Claude Code. 
 
 ## Quick start 
 
