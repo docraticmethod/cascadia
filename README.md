@@ -8,7 +8,7 @@
 
 A Node/Express tool that turns plain-English requirements into a complete system-instructions document Claude Code can execute without further prompting. Input requirements and Submit; Cascadia drafts a strategy, flags inconsistencies, and fixes them with one click. Strategy compiles into architecture via swappable templates, flags and fixes issues, then outputs system instructions into your target project. Edit any layer in the Console and everything downstream regenerates. Hand the system instructions to Claude Code and it builds the app.
 
-## Quick start after cloning this repo
+## Quick start 
 
 1. Copy `/TARGET/context-docs/` from the console project into your target project root so workflow lives at `<project>/context-docs/workflow/`.
 2. Pick a template from `/TARGET/template-library/` and drop it in your target project at `<project>/context-docs/template/`.
