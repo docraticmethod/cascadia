@@ -1,3 +1,4 @@
+
 # Cascadia 
 
 ## Cascadia is a spec-driven build system console for coding agents 
@@ -26,6 +27,8 @@ PORT=3001
 ```
 4. `npm install && node src/server.js`
 5. Open Cascadia Console at `http://localhost:3001`
+   
+<img width="1878" height="859" alt="Screenshot from 2026-05-19 18-30-59_cropped" src="https://github.com/user-attachments/assets/7b75dbd0-d5e4-4149-96f3-dc599922bd3a" />
 
 Note: The Unlock checkbox enables Edit/Add and disables Submit. The Lock checkbox disables Edit/Add and enables Submit. 
 
