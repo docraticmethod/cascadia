@@ -11,14 +11,26 @@ Plan first, in this order:
 2. Propose the exact data contracts at each boundary — input schema, intermediate shape (if any), output schema.
 3. Identify the smallest first slice — one input → one process step → one output, end-to-end. Skip storage, observability, and dashboard until that runs.
 4. List any new dependencies (likely a schema validator such as zod or ajv).
+5. Dashboard is the final build phase, after run.js produces validated output end-to-end. Do not begin dashboard until CLI completes a clean pass.
 
 Do not create files yet. Show me the plan.
 
 Important notes:
 
+- Test-data sizing budget: total model calls across the fixture set must keep runtime under ~5 min and burst under the rate ceiling. For nested data, multiply through every level. REQUIREMENTS.md declares the cap; architecture flags if exceeded.
 - Output must be reviewable, with reasoning visible wherever the process makes a judgment call.
 - Schema rigor matters: contracts at every boundary.
 - Privacy: input data is synthetic dummy data unless stated otherwise. No real PII.
+
+Dashboard notes:
+
+- Panel structure: default two-panel 
+- Left panel lists records in a defined sort order (if declared in REQUIREMENTS), top to bottom, selectable. Top item selected by default on load.
+- Right panel displays data sub-sections for each case-object-actor 
+- Default expansion: all sub-sections in right panel load in collapsed state
+- Independent scroll: all panels
+- Collapsed minimum height: fixed minimum height sufficient to show the section label
+
 
 ## Architecture
 
@@ -33,6 +45,7 @@ Important notes:
    - **Fan-out** — parallel processing per record via `Promise.all`, then aggregation.
    - **Single transform** — input in, output out, no intermediate state.
 3. **process/steps/** — if the process is multi-step, one file per step. Each step is pure where possible: takes a record, returns a record, no hidden state.
+4. If the process layer calls the Anthropic SDK, initialize the client with maxRetries: 3 by default.
 
 ### Outputs
 
@@ -71,6 +84,12 @@ Important notes:
 
 ## Guardrails (optional)
 
-If the process makes consequential judgment calls (reg-tech, healthtech, fintech, legaltech, or similar domains where conservative bias is required), wrap the process layer with the two-pass guardrail pattern. See:
+If the process makes consequential judgment calls (reg-tech, healthtech, fintech, legaltech, or similar domains where conservative bias is required), wrap the process layer with the two-pass guardrail pattern. 
+
+Guardrail logic lives alongside process.js (e.g., process/guardrail.js) and is invoked sequentially: preflight → process → postflight → escalation. Escalate-only invariant: disagreement always escalates, never relaxes.
+
+See:
 
 - [`context-docs/template/GUARDRAIL_SPEC.md`](context-docs/template/GUARDRAIL_SPEC.md) — Reference System Instructions for Guardrails
+
+If the process makes consequential model-driven judgment calls and GUARDRAIL_SPEC.md is not present in the template directory, flag during architecture evaluation.

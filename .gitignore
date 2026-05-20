@@ -11,6 +11,9 @@ node_modules/
 
 *.log
 
+#tmp
+tmp/
+
 #generated runtime output
 output/
 traces/

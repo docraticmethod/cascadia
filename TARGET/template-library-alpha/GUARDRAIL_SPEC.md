@@ -63,6 +63,7 @@ Returns:
 - **Two-pass**: risks identified upfront, verified afterward
 - **Conservative bias**: disagreement always escalates, never relaxes
 - **Auditable**: every run produces a trace; every override is logged with original call, new call, and rationale
+- **Make in-place mutation explicit**: Postflight mutations apply to the output object in place. Downstream skills consume post-guardrail values; original primary-skill urgency is not preserved alongside escalated urgency."
 
 ## Output schema (per case)
 
