@@ -29,5 +29,29 @@ PORT=3001
 
 Note: The Unlock checkbox enables Edit/Add and disables Submit. The Lock checkbox disables Edit/Add and enables Submit. 
 
+## TL;DR
+
+### What it is
+
+Cascadia is a spec-driven build system for coding agents — an orchestration layer that sits above the coding agent and treats the specification itself as the artifact to be compiled. Where current spec-driven approaches (GitHub Spec Kit, AWS Kiro, recent Anthropic and OpenAI patterns) generate downstream specs from upstream ones with human review at the seams, Cascadia adds three properties absent from that cohort:
+
+1. **Idempotent regeneration** of every downstream document from its upstream inputs — Make/Bazel semantics for prompt chains, not incremental edits.
+2. **LLM-as-judge consistency checks** at each stage boundary, surfaced to the architect as warnings with a one-click Fix that triggers a second-pass generation incorporating the flags. Auto-fix is rejected to preserve architect agency.
+3. **Static/dynamic split** in which per-project requirements are dynamic content but architectural invariants live in templates that accumulate as authoritative build inputs across projects.
+
+### How it works
+
+The four-stage chain — `REQUIREMENTS → STRATEGY → ARCHITECTURE → SYSTEM_INSTRUCTIONS` — keeps the architect human-in-the-loop with role-based authority at every seam. The LLM does translation work, the architect does judgment work, and the coding agent receives a system instruction it can execute without architectural interpretation.
+
+### Template library
+
+The current library ships three patterns:
+
+- **Agentic harness** — orchestrator-plus-subagent fan-out pipelines with skills, eval gates, and file-based stage boundaries.
+- **Generic pipeline** — non-agentic input → process → output pipelines with the same staging discipline.
+- **Guardrail spec** — a two-pass preflight-plus-postflight pattern with an escalate-only invariant for reg-tech contexts (healthtech, fintech, legaltech) where conservative bias is required.
+
+The library is extensible by design — each new architectural family (event-stream, RAG, multi-agent, workflow/state-machine, real-time API) is a one-time validation cost that benefits every subsequent build of its family.
+
 ## License
 Apache 2.0
