@@ -1,6 +1,6 @@
-# Cascadia Console 
+# Cascadia 
 
-## Agentic AI Coding Tool for Claude Code
+## Cascadia is a spec-driven build system console for coding agents 
 
 **Author:** Blake Rogers
 
