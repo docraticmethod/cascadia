@@ -12,29 +12,32 @@ Plan first, in this order:
 2. Propose the exact output schema (JSON shape) for one use-case actor, object, or case. Estimate total model calls across the full fixture set. For nested data, multiply through every level (e.g., customers × invoices × calls/invoice).
 3. Identify the smallest first slice — orchestrator + 1 subagent + schema eval + 1 case end-to-end. Skip memory and retry until that runs.
 4. List any new dependencies (likely just zod or ajv for schema validation).
-5. Dashboard is always the final build phase, after CLI produces validated output end-to-end. Do not begin dashboard until run.js completes a clean pass.
+5. Stage gates govern build order:
+   - **Slice 0 — INPUT gate.** `data/<cases>.json` exists and validates against the input schema before any application component is written.
+   - **OUTPUT gate.** `public/output_data.json` is written by the pipeline and validates against the output schema before the dashboard slice begins.
+   - Dashboard is the final build phase. It renders finalized output; it does not assemble data.
 
 Do not create files yet. Show me the plan.
 
 Important notes:
 
-- Input data lives in `/data/`. Filename reflects the case shape — e.g.,
-  `data/<customers>.json`, `data/<customer_invoices>.json`, `data/<patients>.json`.
+- Input data lives in `/data/`. Filename reflects the case shape — e.g., `data/<customers>.json`, `data/<customer_invoices>.json`, `data/<patients>.json`.
 - Input data is synthetic dummy data for the prototype — invented patient data, accounts, invoices, payment histories, order activity, or whatever the use-case requires. No real PII.
 - Test-data sizing budget: total model calls across the fixture set must keep runtime under ~5 min and burst under the rate ceiling. For nested data, multiply through every level. REQUIREMENTS.md declares the cap; architecture flags if exceeded.
 - Output must be reviewable, with reasoning visible.
 - Schema rigor matters: need consistent output structure.
 
-Dashboard notes:
+## Pipeline shape
 
-- Panel structure: default two-panel 
-- Left panel lists cases-objects-actors in sequencer order, top to bottom, selectable. Top item selected by default on load.
-- Right panel displays data sub-sections for each case-object-actor 
-- Default expansion: all sub-sections in right panel load in collapsed state
-- Independent scroll: all panels
-- Collapsed minimum height: fixed minimum height sufficient to show the section label
+Three stages with file-based handoffs. Stage boundaries are files, not live connections.
 
+**INPUT** — versioned fixture at `data/<cases>.json`. Built and validated before any application component is written. Read by the pipeline; never modified during a run.
 
+**PIPELINE** — `run.js` + orchestrator + subagents + skills + eval. Reads INPUT, produces OUTPUT. All model calls, retries, scoring, sequencing, and aggregation happen here. The pipeline writes to OUTPUT exactly once per run, after eval gates pass.
+
+**OUTPUT** — single validated artifact at `public/output_data.json` (or equivalent). Written by `run.js` after eval gates pass; never modified after write. The dashboard reads this file via the dashboard server.
+
+The pipeline writes; the server serves; the client reads. No data flow between stages at render time. No interpretation of stage-to-stage handoff as "via API" is admissible.
 
 ## Architecture for agentic harness
 
@@ -45,11 +48,9 @@ Dashboard notes:
 
 ### Skills
 
-
-
 3. Skills:
 
-**Skill contract** - Every file in skills/ must export exactly four things: name (string), systemPrompt (string), tools (array, possibly empty), successCriteria (object with a validate function). 
+**Skill contract** — Every file in skills/ must export exactly four things: name (string), systemPrompt (string), tools (array, possibly empty), successCriteria (object with a validate function).
 
    a) **skills/primary.js** — the domain skill (processing, triage, scoring, classification, etc.) capability as a data object: `name`, `systemPrompt` (guidance + output schema), `tools` (none initially), `successCriteria` (schema validation + sanity checks).
 
@@ -76,8 +77,25 @@ Dashboard notes:
 
 ### Application
 
-7. **run.js** — CLI agentic entry. `node src/run.js [data/<actors-objects-cases>.json]`
+7. **run.js** — CLI agentic entry. `node src/run.js [data/<actors-objects-cases>.json]`. On a clean run, writes the OUTPUT artifact and exits.
 
-### Web
+## Dashboard architecture
 
-8. **server.js** — Node.js Express web dashboard server / health test. Entry point: `src/server.js` creates and exports the Express app. The `import.meta.url === pathToFileURL(process.argv[1]).href` guard is the ESM equivalent of `require.main === module`; the HTTP server only starts when the file is run directly, not when imported in tests.
+The dashboard is four files with explicit responsibilities. The server validates the OUTPUT artifact at startup; if validation fails, the dashboard does not start. No partial-success state where some endpoints work and others don't.
+
+8. **dash-app-server.js** — Node/Express. Reads `public/output_data.json`, validates it against the output schema, exposes API endpoints to the client. The only component that touches the data file. ESM main-module guard (`import.meta.url === pathToFileURL(process.argv[1]).href`) so the HTTP server only starts when run directly, not when imported in tests.
+
+9. **dash-app-client.js** — consumes the server's API endpoints. Never reads the data file directly. Holds all rendering, selection, expansion, and scroll logic.
+
+10. **dash-app.html** — markup only. No inline styles. No inline scripts beyond loading the client module.
+
+11. **dash-app.css** — external stylesheet. No styling lives in HTML or JS.
+
+## Dashboard layout invariants
+
+- Panel structure: default two-panel.
+- Left panel lists cases-objects-actors in sequencer order, top to bottom, selectable. Top item selected by default on load.
+- Right panel displays data sub-sections for each case-object-actor.
+- Default expansion: all sub-sections in right panel load in collapsed state.
+- Independent scroll: all panels.
+- Collapsed minimum height: fixed minimum height sufficient to show the section label.
