@@ -1,17 +1,22 @@
+# Cascadia
 
-# Cascadia 
-
-## Cascadia is a spec-driven build system console for coding agents 
+## Cascadia is a spec-driven build system console for coding agents
 
 **Author:** Blake Rogers
-
 **Email:** saltyfog@gmail.com
-
 **LinkedIn:** https://www.linkedin.com/in/blakerogerz/
 
-Cascadia Console turns plain-English requirements into a complete system-instructions document Claude Code can execute without further prompting. Input requirements and Submit; Cascadia drafts a strategy, flags inconsistencies, and fixes them with one click. Strategy compiles into architecture via swappable templates, flags and fixes issues, then outputs system instructions into your target project. Edit any layer in the Console and everything downstream regenerates. Hand the system instructions to Claude Code and it builds the app. 
+Cascadia is an orchestration layer that sits above the coding agent and treats the specification itself as the artifact to be compiled. Input requirements and Submit; Cascadia drafts a strategy, flags inconsistencies, and fixes them with one click. Strategy compiles into architecture via swappable templates, flags and fixes issues, then outputs system instructions into your target project. Edit any layer in the Console and everything downstream regenerates. Hand the system instructions (with architecture and strategy as additional guidance) to Claude Code and it builds the app.
 
-For building Node/Express with Claude Code. 
+**Scope:** Node/Express applications built with Claude Code. Four reference POCs built with Cascadia: two Emergency Department triage prototypes, an ex-convict recidivism risk triage prototype, and an SF AI events triage prototype.
+
+**Model portability.** The Console itself is Anthropic-only today; using a different LLM (e.g. Gemini) would require implementing a toggle, integrating that vendor's SDK, and adding the corresponding API key to `.env`. The *target* application's model choice is decoupled from the Console — switching it is a template change: modify the architectural template to specify a different SDK. Templates are drop-in, so this is the trivial path.
+
+## Quick start
+
+1. Copy `/TARGET/context-docs/` from the console project into your target project root so workflow lives at `<project>/context-docs/workflow/`.
+2. Pick a template from `/TARGET/template-library/` and drop it in your target project at `<project>/context-docs/template/`.
+3. Create `.env`:
 
 ## Quick start 
 
@@ -27,10 +32,14 @@ PORT=3001
 ```
 4. `npm install && node src/server.js`
 5. Open Cascadia Console at `http://localhost:3001`
-   
-<img width="1878" height="859" alt="Screenshot from 2026-05-19 18-30-59_cropped" src="https://github.com/user-attachments/assets/7b75dbd0-d5e4-4149-96f3-dc599922bd3a" />
 
-Note: The Unlock checkbox enables Edit/Add and disables Submit. The Lock checkbox disables Edit/Add and enables Submit. 
+<img width="1878" height="859" alt="Cascadia Console showing the four-tab cascade: REQUIREMENTS, STRATEGY, ARCHITECTURE, SYSTEM_INSTRUCTIONS" src="https://github.com/user-attachments/assets/7b75dbd0-d5e4-4149-96f3-dc599922bd3a" />
+
+*Cascadia Console: four-tab cascade with the architect editing one layer and downstream layers regenerating from upstream.*
+
+### Using the Console
+
+The Unlock checkbox enables Edit/Add and disables Submit. The Lock checkbox disables Edit/Add and enables Submit. Edit any layer, Lock, Submit — downstream regenerates and the consistency check flags inconsistencies against the immediate upstream document. Click Fix on any flag for a second-pass generation that incorporates it.
 
 ## TL;DR
 
@@ -57,4 +66,5 @@ The current library ships three patterns:
 The library is extensible by design — each new architectural family (event-stream, RAG, multi-agent, workflow/state-machine, real-time API) is a one-time validation cost that benefits every subsequent build of its family.
 
 ## License
+
 Apache 2.0
