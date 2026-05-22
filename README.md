@@ -5,6 +5,7 @@
 **Author:** Blake Rogers
 **Email:** saltyfog@gmail.com
 **LinkedIn:** https://www.linkedin.com/in/blakerogerz/
+**Medium:** wings.medium.com
 
 Cascadia is an AI architects' orchestration layer that sits above the coding agent and treats the specification itself as the artifact to be compiled. Input requirements and Submit; Cascadia drafts a strategy, an LLM-as-a-judge pattern flags inconsistencies, and fixes them with one click. Strategy compiles into architecture via swappable templates, flags and fixes issues, then outputs system instructions into your target project. Edit any layer in the Console and regenerate everything downstream. Hand the system instructions to Claude Code (with architecture and strategy as additional guidance) and it builds the app. You only need to give it required permissions instead of a constant back and forth chat directing it through the entire build.
 
@@ -12,6 +13,13 @@ Cascadia is an AI architects' orchestration layer that sits above the coding age
 
 **Model portability.** The Console itself is Anthropic-only today; using a different LLM (e.g. Gemini) would require implementing a toggle, integrating that vendor's SDK, and adding the corresponding API key to `.env`. The *target* application's model choice is decoupled from the Console — switching it is a template change: modify the architectural template to specify a different SDK. Templates are drop-in, so this is the trivial path.
 
+## Essential reading
+
+## Essential reading
+
+**[A practitioner's guide for writing requirements in a spec-driven AI build cascade](https://wings.medium.com/9d19e2fcc727?source=friends_link&sk=77738cd20abad5393956a1cbf3829a48)** 
+
+Read this before drafting requirements for your own project. It encodes the requirements-writing lessons from four reference POCs and is the difference between a cascade that compiles cleanly and one that propagates ambiguity silently into the built application.
 
 ## Quick start 
 
