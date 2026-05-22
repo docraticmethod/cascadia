@@ -30,7 +30,7 @@ PORT=3001
 
 <img width="1878" height="859" alt="Cascadia Console showing the four-tab cascade: REQUIREMENTS, STRATEGY, ARCHITECTURE, SYSTEM_INSTRUCTIONS" src="https://github.com/user-attachments/assets/7b75dbd0-d5e4-4149-96f3-dc599922bd3a" />
 
-*Cascadia Console: four-tab cascade with the architect editing one layer and downstream layers regenerating from upstream.*
+*Cascadia Console: four-tab cascade. Architecture tab shows green Fixed flags; System Instructions tab is generating.*
 
 ### Using the Console
 
