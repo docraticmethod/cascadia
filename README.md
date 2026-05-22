@@ -6,17 +6,12 @@
 **Email:** saltyfog@gmail.com
 **LinkedIn:** https://www.linkedin.com/in/blakerogerz/
 
-Cascadia is an orchestration layer that sits above the coding agent and treats the specification itself as the artifact to be compiled. Input requirements and Submit; Cascadia drafts a strategy, flags inconsistencies, and fixes them with one click. Strategy compiles into architecture via swappable templates, flags and fixes issues, then outputs system instructions into your target project. Edit any layer in the Console and everything downstream regenerates. Hand the system instructions (with architecture and strategy as additional guidance) to Claude Code and it builds the app.
+Cascadia is an AI architects' orchestration layer that sits above the coding agent and treats the specification itself as the artifact to be compiled. Input requirements and Submit; Cascadia drafts a strategy, an LLM-as-a-judge pattern flags inconsistencies, and fixes them with one click. Strategy compiles into architecture via swappable templates, flags and fixes issues, then outputs system instructions into your target project. Edit any layer in the Console and regenerate everything downstream. Hand the system instructions to Claude Code (with architecture and strategy as additional guidance) and it builds the app. You only need to give it required permissions instead of a constant back and forth chat directing it through the entire build.
 
 **Scope:** Node/Express applications built with Claude Code. Four reference POCs built with Cascadia: two Emergency Department triage prototypes, an ex-convict recidivism risk triage prototype, and an SF AI events triage prototype.
 
 **Model portability.** The Console itself is Anthropic-only today; using a different LLM (e.g. Gemini) would require implementing a toggle, integrating that vendor's SDK, and adding the corresponding API key to `.env`. The *target* application's model choice is decoupled from the Console — switching it is a template change: modify the architectural template to specify a different SDK. Templates are drop-in, so this is the trivial path.
 
-## Quick start
-
-1. Copy `/TARGET/context-docs/` from the console project into your target project root so workflow lives at `<project>/context-docs/workflow/`.
-2. Pick a template from `/TARGET/template-library/` and drop it in your target project at `<project>/context-docs/template/`.
-3. Create `.env`:
 
 ## Quick start 
 
