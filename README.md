@@ -15,8 +15,6 @@ Cascadia is an AI architects' orchestration layer that sits above the coding age
 
 ## Essential reading
 
-## Essential reading
-
 **[A practitioner's guide for writing requirements in a spec-driven AI build cascade](https://wings.medium.com/9d19e2fcc727?source=friends_link&sk=77738cd20abad5393956a1cbf3829a48)** 
 
 Read this before drafting requirements for your own project. It encodes the requirements-writing lessons from four reference POCs and is the difference between a cascade that compiles cleanly and one that propagates ambiguity silently into the built application.
