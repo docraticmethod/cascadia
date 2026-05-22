@@ -1,0 +1,218 @@
+You are a software architect. Generate ARCHITECTURE.md based on its STRATEGY.md and the provided architecture templates.
+The architect is EDITING existing content. Return the COMPLETE revised downstream document.
+Return only the markdown content.
+
+ARCHITECTURE TEMPLATES:
+
+### ARCHITECTURE_TEMPALTE_AGENTIC_HARNESS.md
+# ARCHITECTURE_TEMPLATE_AGENTIC_HARNESS.md
+
+Describes what components exist and how they wire together (orchestrator, subagent, skills, eval, memory, etc.).
+
+## Architectural Instructions
+
+Flat structure to start; promote to layered (routes / controllers / services) only when a second resource warrants it.
+
+Plan first, in this order:
+
+1. Confirm or adjust the architecture for this scenario.
+2. Propose the exact output schema (JSON shape) for one use-case actor, object, or case. Estimate total model calls across the full fixture set. For nested data, multiply through every level (e.g., customers × invoices × calls/invoice).
+3. Identify the smallest first slice — orchestrator + 1 subagent + schema eval + 1 case end-to-end. Skip memory and retry until that runs.
+4. List any new dependencies (likely just zod or ajv for schema validation).
+5. Stage gates govern build order:
+   - **Slice 0 — INPUT gate.** `data/<cases>.json` exists and validates against the input schema before any application component is written.
+   - **OUTPUT gate.** `public/output_data.json` is written by the pipeline and validates against the output schema before the dashboard slice begins.
+   - Dashboard is the final build phase. It renders finalized output; it does not assemble data.
+
+Do not create files yet. Show me the plan.
+
+Important notes:
+
+- Input data lives in `/data/`. Filename reflects the case shape — e.g., `data/<customers>.json`, `data/<customer_invoices>.json`, `data/<patients>.json`.
+- Input data is synthetic dummy data for the prototype — invented patient data, accounts, invoices, payment histories, order activity, or whatever the use-case requires. No real PII.
+- Test-data sizing budget: total model calls across the fixture set must keep runtime under ~5 min and burst under the rate ceiling. For nested data, multiply through every level. REQUIREMENTS.md declares the cap; architecture flags if exceeded.
+- Output must be reviewable, with reasoning visible.
+- Schema rigor matters: need consistent output structure.
+
+## Pipeline shape
+
+Three stages with file-based handoffs. Stage boundaries are files, not live connections.
+
+**INPUT** — versioned fixture at `data/<cases>.json`. Built and validated before any application component is written. Read by the pipeline; never modified during a run.
+
+**PIPELINE** — `run.js` + orchestrator + subagents + skills + eval. Reads INPUT, produces OUTPUT. All model calls, retries, scoring, sequencing, and aggregation happen here. The pipeline writes to OUTPUT exactly once per run, after eval gates pass.
+
+**OUTPUT** — single validated artifact at `public/output_data.json` (or equivalent). Written by `run.js` after eval gates pass; never modified after write. The dashboard reads this file via the dashboard server.
+
+The pipeline writes; the server serves; the client reads. No data flow between stages at render time. No interpretation of stage-to-stage handoff as "via API" is admissible.
+
+## Architecture for agentic harness
+
+### Orchestrator and subagent
+
+1. **orchestrator.js** — reads `data/<actors-objects-cases>.json`, fans out one subagent per use-case Actor, Object, or Case (depending on use-case context) via `Promise.all`, aggregates results, writes a report. When a downstream skill (sequencer, aggregator) requires fields not present in finalized per-case records, the orchestrator enriches at call time by merging from original payloads. Per-case output contract remains untouched.
+2. **subagent.js** — wraps Anthropic SDK. Per-actor/object/case: takes a use-case actor/object/case, returns structured output. Tool-use loop with `end_turn`. Anthropic client initialized with maxRetries: 3 by default.
+
+### Skills
+
+3. Skills:
+
+**Skill contract** — Every file in skills/ must export exactly four things: name (string), systemPrompt (string), tools (array, possibly empty), successCriteria (object with a validate function).
+
+   a) **skills/primary.js** — the domain skill (processing, triage, scoring, classification, etc.) capability as a data object: `name`, `systemPrompt` (guidance + output schema), `tools` (none initially), `successCriteria` (schema validation + sanity checks).
+
+   b) **skills/guardrail.js** — exports two prompts (`preflightSystemPrompt` and `postflightSystemPrompt`) plus `successCriteria` that validates the JSON shape AND enforces the escalate-only invariant.
+
+   Per-actor/object/case flow in the orchestrator (sequential within an actor/object/case, parallel across cases via `Promise.all`): preflight → (with flags) → postflight → escalation logic.
+
+   If available and provided in templates, see the following context-doc template for detailed guardrail specification:
+   - [`context-docs/template/GUARDRAIL_SPEC.md`](context-docs/template/GUARDRAIL_SPEC.md) — Reference System Instructions for Guardrails
+
+   c) **skills/sequencer.js** — a skill that takes the full array of finalized actor/object/case records and returns an ordered queue. Required when the domain verb implies ordering (triage, prioritize, rank, route, match, queue). Omit only when no such verb is present.
+
+### Eval
+
+4. **eval.js** — gates: `validateSchema` (output matches the contract), `sanityCheck` (e.g., "now" actions/objects/cases have at least one Immediate action). Aggregate errors, no short-circuit.
+
+### Data storage
+
+5. **memory.js** — JSONL at `traces/failures.jsonl`. Records actors/objects/cases where eval failed; on retry, prior failure context informs the next attempt.
+
+### Log trace
+
+6. **logger.js** — JSONL trace per run, `traceId` threaded through.
+
+### Application
+
+7. **run.js** — CLI agentic entry. `node src/run.js [data/<actors-objects-cases>.json]`. On a clean run, writes the OUTPUT artifact and exits.
+
+## Dashboard architecture
+
+The dashboard is four files with explicit responsibilities. The server validates the OUTPUT artifact at startup; if validation fails, the dashboard does not start. No partial-success state where some endpoints work and others don't.
+
+8. **dash-app-server.js** — Node/Express. Reads `public/output_data.json`, validates it against the output schema, exposes API endpoints to the client. The only component that touches the data file. ESM main-module guard (`import.meta.url === pathToFileURL(process.argv[1]).href`) so the HTTP server only starts when run directly, not when imported in tests.
+
+9. **dash-app-client.js** — consumes the server's API endpoints. Never reads the data file directly. Holds all rendering, selection, expansion, and scroll logic.
+
+10. **dash-app.html** — markup only. No inline styles. No inline scripts beyond loading the client module.
+
+11. **dash-app.css** — external stylesheet. No styling lives in HTML or JS.
+
+## Dashboard layout invariants
+
+- Panel structure: default two-panel.
+- Left panel lists cases-objects-actors in sequencer order, top to bottom, selectable. Top item selected by default on load.
+- Right panel displays data sub-sections for each case-object-actor.
+- Default expansion: all sub-sections in right panel load in collapsed state.
+- Independent scroll: all panels.
+- Collapsed minimum height: fixed minimum height sufficient to show the section label.
+
+---USER---
+
+STRATEGY.md:
+# STRATEGY.md
+
+## Frame
+
+This is a personal triage prototype on the architect's own laptop. It is not a product, not multi-tenant, not validated against third parties. The strategic implication is that everything that would matter in a production system — auth, persistence, telemetry, retraining loops, A/B harnesses, scrape automation, refresh schedulers — is explicitly out of scope. The system has to do one thing well: take a small fixture of mined lu.ma events and produce a defensible ranked triage view on a dark futuristic dashboard.
+
+The center of gravity is the **factor framework and its rationale output**, not the UI and not the data pipeline. The dashboard exists to make the framework legible. The fixture exists to exercise the framework. Every other decision serves those two.
+
+## What "good" looks like
+
+A working prototype where:
+
+- The architect can open the dashboard, see seven real upcoming events ranked, and within thirty seconds agree with the top and bottom of the list.
+- The ambiguous and missing-data cases in the middle produce rationales that the architect finds *useful* — i.e., they surface a consideration he hadn't already pre-decided, or they crisply name what he'd need to learn to move the event up or down.
+- The factor framework is the artifact. The code is disposable; the framework, once it survives contact with seven real events, is reusable for future triage and informs how the architect prompts himself when reviewing events manually.
+
+Failure modes to avoid:
+
+- A polished dashboard that ranks events using a hidden heuristic the architect can't audit.
+- Rationales that restate the factor labels without committing to a judgment.
+- A fixture so favorable that every case is "Attend" and the framework is never stressed.
+- Over-engineering toward generality (multi-user, live scraping, model fine-tuning) before the single-user case is shown to work.
+
+## Strategic priorities, in order
+
+1. **Framework fidelity over UI polish.** The three-category factor model (positive, negative, logistics — non-overlapping) must be encoded faithfully. If a UI shortcut would obscure which category a factor belongs to or how it influenced a ranking, reject the shortcut.
+
+2. **Rationale quality over composite scores.** A numeric composite is a means, not the output. The output is the per-event explanation and the ranked-list rationale. Treat the score as scaffolding; the user-facing artifact is prose that names specific factors.
+
+3. **Fixture realism over fixture volume.** Seven events, mined from real lu.ma listings, covering the required variability (must-attend, must-skip, ambiguous, missing-data, logistics-extreme, mid-tier). A larger fixture of synthetic events is worse than a tight fixture of real ones.
+
+4. **Conservative handling of missing data.** Events with substantial gaps must be visibly flagged, ranked below confirmed high-value events, and the rationale must name *what specifically* would change the ranking. This is a first-class requirement, not a polish item.
+
+5. **Dashboard legibility over dashboard features.** Two panels, ranked list left, detail right, collapsible sections, dark futuristic theme. No filters, no search, no settings, no export. Defaults (position 1 selected, all sections collapsed) are part of the spec, not configuration.
+
+## Scope boundaries
+
+**In scope:**
+- A static fixture of 7 real lu.ma events, hand-curated to cover the required cases.
+- An LLM-driven factor extraction step that maps each event to present/absent positive factors, present/absent negative factors, applicable logistics factors, and an explicit missing-information section. The missing-information section is a required output for *every* event — it may be empty/none where the event listing is complete, but it is always rendered, not only attached to fixture cases flagged as substantially incomplete.
+- An LLM-driven ranking step that produces a composite ordering respecting value, logistics cost, urgency from event date proximity, and conservative treatment of unknowns, with per-position rationales.
+- Per-event output: factor assessment (including the always-present missing-information section described above), Attend/Consider/Skip action, prose rationale, follow-up checklist.
+- A two-panel dashboard with the specified defaults, collapsibility, scroll behavior, and visual treatment.
+
+**Out of scope:**
+- Live scraping or refresh of lu.ma. The fixture is captured once.
+- Persistence of architect feedback, attendance outcomes, or framework tuning loops. Post-event documentation is a follow-up checklist *item*, not a system feature.
+- Multi-user, auth, sharing, or export.
+- Inference about specific attendees, hosts' private networks, or non-public event content.
+- Mobile or responsive layouts. Desktop laptop only.
+- Configurability of the factor framework at runtime. The framework is encoded; revising it means editing source.
+- Non-LLM ranking implementations. The LLM-driven approach is a requirements-level commitment, not a strategy-level tradeoff to revisit.
+
+## Key strategic decisions
+
+### Where the judgment lives
+
+The factor framework is explicit and inspectable, encoded in the prompts and in the documented framework artifact. The LLM produces structured factor assessments and prose rationales *against* that explicit framework — it does not invent factors and is not asked to produce an opaque ranking. The composite ranking logic combines four inputs on equal first-class footing:
+
+1. **Value** — positive factors weighed against negative factors.
+2. **Logistics cost** — how logistics factors modulate the value-vs-cost judgment.
+3. **Urgency from event date proximity** — sooner events with comparable value rank above more distant ones; urgency is an explicit ordering input, not a tiebreaker.
+4. **Missing-data conservatism** — events with substantial gaps rank below confirmed high-value events and above confirmed low-value events.
+
+This composite logic is specified in the sequencer prompt in a form the architect can read end-to-end in one sitting, and each ranked position carries its own rationale that cites the factors driving it — including, where relevant, the urgency and missing-data considerations that placed it relative to its neighbors.
+
+This is the operative constraint on the LLM: it is a structured-reasoning engine over a fixed framework, not a black-box ranker.
+
+### Model usage budget
+
+LLM calls are bounded and predictable. The ceiling is at most one structured extraction pass per event, plus one rationale-generation pass per event, plus one list-level sequencing pass that emits N per-position rationales. For a fixture of 7 events, that ceiling is 7 + 7 + 1 = 15 calls per full run. Extraction and rationale passes may be merged into a single call per event if prompt engineering supports it without degrading either output; in that merged configuration the floor is 7 + 1 = 8 calls per run. So the operative budget is **up to 15 calls, potentially as few as 8 if extraction and rationale are merged** — downstream architecture should plan against that explicit ceiling and floor. The "7 events total — do not exceed without re-budgeting model calls" constraint in the requirements is a hard ceiling on fixture growth precisely because it caps call volume. Whether to merge is an implementation tactic, not a strategic shift.
+
+### Fixture as test harness
+
+The fixture is not just example data; it is the acceptance test. The required coverage (must-attend, must-skip, ambiguous, missing-data, logistics-extreme, mid-tier) defines what the framework has to handle. If the framework produces a counterintuitive ranking on the fixture, the fixture wins until the framework — or the prompt encoding it — is revised to justify the ranking on those specific factors.
+
+### Disposable code, durable framework
+
+Implementation choices (language, framework, component library) optimize for fastest path to a working two-panel dashboard on the architect's laptop. The code is expected to be thrown away or heavily rewritten if the framework changes. The framework — the factor lists, their categorization, the composite logic, the rationale style, and the prompts that encode them — is the durable artifact and should be documented in plain language alongside the code.
+
+### Visual treatment as fixed requirement
+
+The dark-background / bright-bold-font / high-tech-futuristic-space-age treatment is a required deliverable per the requirements, not a stretch goal and not negotiable downstream. Strategically this means: pick a palette and a typeface early, commit, and execute without iteration. It also means the visual treatment is *bounded* — it is a one-shot styling pass, not an ongoing design track that competes with framework work for attention.
+
+## Risks and how they're managed
+
+- **Risk: framework looks reasonable in the abstract but produces bad rankings on real events.** Mitigation: build the fixture before the ranking logic is finalized; let the seven real cases pressure-test the framework and revise the framework, not the fixture.
+- **Risk: LLM produces plausible-sounding rationales that don't actually reference the factor framework.** Mitigation: structure the rationale-generation prompt to cite specific factors by name from the framework; reject outputs that don't. Treat this as a correctness check on the LLM output, not a stylistic preference.
+- **Risk: LLM-driven ranking is non-deterministic across runs, undermining the architect's ability to audit it.** Mitigation: low-temperature settings on the sequencing call, structured output schemas, and persisted run outputs so a given fixture run can be re-read rather than re-rolled. The architect audits a snapshot, not a live oracle.
+- **Risk: missing-data events get optimistically ranked because absent negatives look like positives.** Mitigation: missing-data conservatism is a first-class rule in the sequencer prompt, and a missing-information section is a required per-event output for every event (empty where the listing is complete), not optional and not reserved for the flagged cases.
+- **Risk: urgency gets underweighted in favor of value or composite cleanliness.** Mitigation: urgency is named as a first-class composite input in the sequencer prompt alongside value, logistics cost, and missing-data conservatism, and per-position rationales must cite it where it affects placement relative to neighbors.
+- **Risk: dashboard polish absorbs time that should go to framework iteration.** Mitigation: dashboard is locked to the spec — two panels, collapsibility, dark theme, defaults — and no scope is added until the framework survives the fixture.
+- **Risk: the "futuristic" aesthetic becomes a rabbit hole.** Mitigation: pick a palette and a typeface early, commit, move on. Aesthetic is a one-shot decision, not an iteration target — and it is a requirement, so it cannot be cut, but it also cannot be expanded.
+
+## Success criteria
+
+The prototype is done when:
+
+1. Seven real lu.ma events are loaded as a fixture, covering the required case mix.
+2. Each event has a complete factor assessment (including an always-rendered missing-information section), an Attend/Consider/Skip action, a rationale that cites specific factors, and a follow-up checklist — all produced by LLM calls against the explicit framework.
+3. The ranked list orders all seven from highest to lowest priority, with one rationale per position explaining that position against value, logistics cost, urgency from event date proximity, and missing-data conservatism.
+4. The dashboard renders the two-panel layout with the specified defaults, behavior, and dark futuristic visual treatment on the architect's laptop.
+5. The architect, reviewing the output, can point to at least one event where the framework surfaced a consideration he would not have weighted as heavily on his own — evidence that the framework is doing work, not just confirming priors.
+
+Existing ARCHITECTURE.md:
+# ARCHITECTURE.md

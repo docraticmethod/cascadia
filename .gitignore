@@ -8,11 +8,9 @@ node_modules/
 .env.*
 
 #logs
-
 *.log
 
-#tmp
-tmp/
+
 
 #generated runtime output
 output/
