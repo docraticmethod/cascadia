@@ -4,7 +4,7 @@ Return only the markdown content.
 
 ARCHITECTURE TEMPLATES:
 
-### ARCHITECTURE_TEMPALTE_AGENTIC_HARNESS.md
+### ARCHITECTURE_TEMPLATE_AGENTIC_HARNESS.md
 # ARCHITECTURE_TEMPLATE_AGENTIC_HARNESS.md
 
 Describes what components exist and how they wire together (orchestrator, subagent, skills, eval, memory, etc.).
@@ -107,112 +107,476 @@ The dashboard is four files with explicit responsibilities. The server validates
 - Independent scroll: all panels.
 - Collapsed minimum height: fixed minimum height sufficient to show the section label.
 
+### GUARDRAIL_SPEC.md
+# GUARDRAIL_SPEC.md
+
+Specification for the two-pass guardrail pattern: preflight skill + postflight skill + escalate-only flow. Fed to the AI when generating SYSTEM_INSTRUCTIONS. Domain-specific values (risk categories, severity ramps, urgency labels, action groupings) are translated per project during STRATEGY → ARCHITECTURE → SYSTEM_INSTRUCTIONS.
+
+Applies to reg-tech contexts where AI judgment is consequential and conservative bias is required: healthtech, fintech, legaltech, and similar domains.
+
+## Premise
+
+The model can be wrong. The cost of relaxing urgency on a case that warranted escalation is higher than the cost of escalating a case that didn't. The guardrail wraps the primary skill on both sides to enforce that asymmetry.
+
+## 1. Preflight
+
+A guardrail subagent inspects the raw case for risk signals the primary skill must not miss. Categories are domain-defined; common patterns:
+
+- Out-of-range values on critical metrics (domain-specific anomalies)
+- Time-sensitive signal combinations (clusters that change urgency when co-occurring)
+- Missing data that would change urgency if known
+- Subjective stakeholder cues (concern language, qualitative observations)
+
+Returns:
+
+```json
+{
+  "flags": [{ "category": ..., "signal": ..., "severity": ..., "must_address": ... }],
+  "preflight_summary": ...
+}
+```
+
+Flags pass into the primary skill as input context, so the model sees the safety concerns in its own input.
+
+## 2. Postflight
+
+The same guardrail re-inspects the primary skill's output against the preflight flags AND independently re-reads the case for missed signals.
+
+Returns:
+
+```json
+{
+  "agrees": ...,
+  "unaddressed_flags": [...],
+  "new_concerns": [...],
+  "suggested_escalation": "<domain-defined enum | null>",
+  "postflight_summary": ...
+}
+```
+
+`suggested_escalation` is a domain-defined enum representing escalation levels (e.g., for triage: `'now' | 'monitor' | 'wait' | null`; for fintech alerts: `'block' | 'review' | 'allow' | null`). The enum must be ordered so "escalate" and "relax" are unambiguous.
+
+## 3. Disagreement (`postflight.agrees === false`)
+
+- Apply `suggested_escalation` — **escalate only, never relax**
+- Append `unaddressed_flags` and `new_concerns` to the explanation
+- Mark `{ review_required: true }` in the output
+- Log to `traces/disagreements.jsonl`
+
+## 4. Agreement (`postflight.agrees === true`)
+
+- Pass output through unchanged
+- Log to `traces/agreements.jsonl` for audit
+
+## Invariants
+
+- **Two-pass**: risks identified upfront, verified afterward
+- **Conservative bias**: disagreement always escalates, never relaxes
+- **Auditable**: every run produces a trace; every override is logged with original call, new call, and rationale
+- **Make in-place mutation explicit**: Postflight mutations apply to the output object in place. Downstream skills consume post-guardrail values; original primary-skill urgency is not preserved alongside escalated urgency."
+
+## Output schema (per case)
+
+Domain-specific labels translate during project generation. Generic shape:
+
+- `urgency`: domain enum (e.g., triage: `now / can_wait / missing_info`; fintech: `block / hold / approve`; legaltech: `escalate / review / proceed`)
+- `actions`: grouped by escalation tier — typically three buckets ordered from most to least urgent (e.g., triage: `Immediate / Monitor / Escalate or Redirect`; fintech: `Halt / Watch / Route`; legaltech: `Stop / Flag / Forward`)
+- `explanation`: brief prose referencing the signals, guidance, or context that drove the call
+- `checklist`: follow-up items (assignment, notification, reassessment flag, handoff notes — domain-translated)
+- `review_required`: boolean; true when guardrail overrode the primary skill
+- `guardrail`: full preflight + postflight record (flags, summaries, agreement state)
+
 ---USER---
 
 STRATEGY.md:
 # STRATEGY.md
 
-## Frame
+## Atomic Research — Paper Relevance Feed: Build Strategy
 
-This is a personal triage prototype on the architect's own laptop. It is not a product, not multi-tenant, not validated against third parties. The strategic implication is that everything that would matter in a production system — auth, persistence, telemetry, retraining loops, A/B harnesses, scrape automation, refresh schedulers — is explicitly out of scope. The system has to do one thing well: take a small fixture of mined lu.ma events and produce a defensible ranked triage view on a dark futuristic dashboard.
+This document translates REQUIREMENTS.md into an execution plan. It is binding on downstream implementation. Where requirements decided something at requirements-time (model ID, visual treatment, degraded-state contract, observability stack), strategy executes it — it does not relitigate it.
 
-The center of gravity is the **factor framework and its rationale output**, not the UI and not the data pipeline. The dashboard exists to make the framework legible. The fixture exists to exercise the framework. Every other decision serves those two.
+---
 
-## What "good" looks like
+## 1. Architecture Overview
 
-A working prototype where:
+A single-page desktop application, run locally, with a clean separation between three layers:
 
-- The architect can open the dashboard, see seven real upcoming events ranked, and within thirty seconds agree with the top and bottom of the list.
-- The ambiguous and missing-data cases in the middle produce rationales that the architect finds *useful* — i.e., they surface a consideration he hadn't already pre-decided, or they crisply name what he'd need to learn to move the event up or down.
-- The factor framework is the artifact. The code is disposable; the framework, once it survives contact with seven real events, is reusable for future triage and informs how the architect prompts himself when reviewing events manually.
+1. **Data layer** — the embedded fixtures (one researcher profile, 10 candidate papers). Loaded once, validated against schema, frozen. No network fetch.
+2. **Compute layer** — deterministic scoring/sequencing (pure functions, no LLM) plus LLM-driven rationale generation (the only LLM surface), instrumented end-to-end with Weave + W&B.
+3. **Presentation layer** — the two-panel editorial UI.
 
-Failure modes to avoid:
+The crucial design principle: **the ranking is deterministic and LLM-free; the explanations are LLM-driven**. Scores are mocked fixtures, ordering is a pure function of those scores. The LLM never decides rank — it only explains a rank already computed. This keeps the feed reproducible and the "every position must be defensible by the rule" contract mechanically enforceable.
 
-- A polished dashboard that ranks events using a hidden heuristic the architect can't audit.
-- Rationales that restate the factor labels without committing to a judgment.
-- A fixture so favorable that every case is "Attend" and the framework is never stressed.
-- Over-engineering toward generality (multi-user, live scraping, model fine-tuning) before the single-user case is shown to work.
+**Recommended action is also deterministic**, derived from the same frozen scores (see Phase 1). The LLM produces only the rationale types and the feed summary — it never decides rank or recommended action.
 
-## Strategic priorities, in order
+**Two-stage LLM call ordering is architectural, not incidental.** The per-paper rationale calls form a batch that runs against the *already-sequenced* feed; the `feed_summary` call runs *after* ranking, taking the sorted top-N as input. The summary is never a peer of the per-paper batch and is never issued before the sequencer has produced an order. This ordering is enforced in code, not left to convention (see Phase 2A/2B).
 
-1. **Framework fidelity over UI polish.** The three-category factor model (positive, negative, logistics — non-overlapping) must be encoded faithfully. If a UI shortcut would obscure which category a factor belongs to or how it influenced a ranking, reject the shortcut.
+---
 
-2. **Rationale quality over composite scores.** A numeric composite is a means, not the output. The output is the per-event explanation and the ranked-list rationale. Treat the score as scaffolding; the user-facing artifact is prose that names specific factors.
+## 2. Technology Choices
 
-3. **Fixture realism over fixture volume.** Seven events, mined from real lu.ma listings, covering the required variability (must-attend, must-skip, ambiguous, missing-data, logistics-extreme, mid-tier). A larger fixture of synthetic events is worse than a tight fixture of real ones.
+| Concern | Choice | Rationale |
+|---|---|---|
+| Runtime | Single-page web app, local | Hackathon laptop target; no server infra needed |
+| Language | TypeScript | Type-safe enforcement of the per-paper output contract |
+| LLM calls | Anthropic Message Batches API (per-paper rationales); single call (feed_summary, post-ranking) | Requirements prefer batching for the 10-paper rationale set: ~half token cost, latency-insensitive. The summary is one post-ranking call, not part of the batch. |
+| Application model | `claude-sonnet-4-6` (pinned snapshot) | Requirements-level commitment; dateless pinned ID, bump deliberately. Governs the *built artifact's* runtime calls only — not the Claude Code build session. |
+| Schema validation | JSON Schema validator (e.g. Ajv) | Required dependency for per-paper output contract |
+| Observability — per-call | Weave (`weave.init`, auto-instruments Anthropic SDK; `@weave.op()` on team functions) | Required: per-call audit trail + eval harness |
+| Observability — per-run | Weights & Biases (one run per fixture/prompt iteration) | Required: cross-iteration comparison record |
+| Secrets | `WANDB_API_KEY` from gitignored `.env` | Required: never hardcoded, never committed |
+| Styling | Hand-authored CSS, no heavy framework | Editorial visual treatment is bespoke; frameworks fight the design |
 
-4. **Conservative handling of missing data.** Events with substantial gaps must be visibly flagged, ranked below confirmed high-value events, and the rationale must name *what specifically* would change the ranking. This is a first-class requirement, not a polish item.
+**Out of scope (must not be built or stubbed with live calls):** OpenAlex/arXiv ingestion, `text-embedding-3-small` embedding, cosine-similarity computation, weekly centroid refresh. These are production-pipeline concerns explicitly frozen for this POC.
 
-5. **Dashboard legibility over dashboard features.** Two panels, ranked list left, detail right, collapsible sections, dark futuristic theme. No filters, no search, no settings, no export. Defaults (position 1 selected, all sections collapsed) are part of the spec, not configuration.
+---
 
-## Scope boundaries
+## 2a. Threshold Model (two distinct thresholds — read before Phase 1)
 
-**In scope:**
-- A static fixture of 7 real lu.ma events, hand-curated to cover the required cases.
-- An LLM-driven factor extraction step that maps each event to present/absent positive factors, present/absent negative factors, applicable logistics factors, and an explicit missing-information section. The missing-information section is a required output for *every* event — it may be empty/none where the event listing is complete, but it is always rendered, not only attached to fixture cases flagged as substantially incomplete.
-- An LLM-driven ranking step that produces a composite ordering respecting value, logistics cost, urgency from event date proximity, and conservative treatment of unknowns, with per-position rationales.
-- Per-event output: factor assessment (including the always-present missing-information section described above), Attend/Consider/Skip action, prose rationale, follow-up checklist.
-- A two-panel dashboard with the specified defaults, collapsibility, scroll behavior, and visual treatment.
+Requirements refer abstractly to "the similarity pre-filter" and "the eligibility threshold" but **never state a numeric eligibility cutoff**, and they require all 10 fixtures (including PAP-10, whose max score is 0.33) to appear in the feed. Strategy therefore distinguishes **two separate thresholds**, which must not be conflated:
 
-**Out of scope:**
-- Live scraping or refresh of lu.ma. The fixture is captured once.
-- Persistence of architect feedback, attendance outcomes, or framework tuning loops. Post-event documentation is a follow-up checklist *item*, not a system feature.
-- Multi-user, auth, sharing, or export.
-- Inference about specific attendees, hosts' private networks, or non-public event content.
-- Mobile or responsive layouts. Desktop laptop only.
-- Configurability of the factor framework at runtime. The framework is encoded; revising it means editing source.
-- Non-LLM ranking implementations. The LLM-driven approach is a requirements-level commitment, not a strategy-level tradeoff to revisit.
+1. **Eligibility / feed-admission threshold (pre-filter).** This is the gate that admits a paper into the feed at all. In this POC **all 10 fixtures are pre-admitted as canonical input** — the fixture set *is* the post-pre-filter result. There is therefore **no numeric admission cutoff applied in this build**; PAP-10 (must-rank-low, max 0.33) appears precisely because the fixtures are the canonical, already-filtered input. This is consistent with PAP-10's stated coverage role of "barely clears the threshold": the implied production pre-filter sits *below* 0.60, and in the POC it is satisfied by construction for every fixture.
+2. **"Component cleared" threshold = 0.60 (strategy-fixed code constant).** This governs only (a) multi-component-match *reporting* and (b) tie-break stage (1). It is **not** the feed-admission gate. A paper can be in the feed (e.g. PAP-10) while clearing *zero* components at 0.60.
 
-## Key strategic decisions
+**Explicit note:** 0.60 is a strategy-level constant chosen to make "components cleared" and the tie-break mechanically testable; requirements state it abstractly, not numerically. It is **not** the eligibility gate, so it does not contradict PAP-10's must-rank-low role. Both the 0.60 component-cleared constant and the 0.80 Read-now cutoff (Phase 1) are strategy-originated design choices, not derived from requirements.
 
-### Where the judgment lives
+---
 
-The factor framework is explicit and inspectable, encoded in the prompts and in the documented framework artifact. The LLM produces structured factor assessments and prose rationales *against* that explicit framework — it does not invent factors and is not asked to produce an opaque ranking. The composite ranking logic combines four inputs on equal first-class footing:
+## 3. Build Phases
 
-1. **Value** — positive factors weighed against negative factors.
-2. **Logistics cost** — how logistics factors modulate the value-vs-cost judgment.
-3. **Urgency from event date proximity** — sooner events with comparable value rank above more distant ones; urgency is an explicit ordering input, not a tiebreaker.
-4. **Missing-data conservatism** — events with substantial gaps rank below confirmed high-value events and above confirmed low-value events.
+### Phase 0 — Scaffold, fixtures & observability wiring
+- Project skeleton, TypeScript config, fixtures embedded as a typed module.
+- JSON Schema for the per-paper output contract; wire the validator.
+- **`.env` setup:** `WANDB_API_KEY` read from gitignored `.env`; confirm `.env` is in `.gitignore` before any commit. No key hardcoded anywhere.
+- **`weave.init("<team>/atomic-research")`** called once at pipeline startup; confirm the Anthropic SDK is auto-instrumented.
+- Validate that the fixtures honor their stated coverage roles (must-rank-high, multi-component, mid-tier, tangential-near-miss, must-rank-low) and that every paper carries a populated abstract, every component a populated `evidence` field, and the profile a populated `publications` array.
+- **Confirm all 10 fixtures are treated as pre-admitted canonical input** — the fixture set is the post-pre-filter result; no numeric admission cutoff is applied (see §2a).
+- **Exit:** fixtures load and validate; schema rejects a deliberately malformed entry; `weave.init` runs clean; `.env` confirmed gitignored and key not in source.
 
-This composite logic is specified in the sequencer prompt in a form the architect can read end-to-end in one sitting, and each ranked position carries its own rationale that cites the factors driving it — including, where relevant, the urgency and missing-data considerations that placed it relative to its neighbors.
+### Phase 1 — Deterministic sequencer & recommended action (no LLM)
+- **"Component cleared" threshold:** a component is considered *cleared* when its `component_similarity ≥ 0.60`. This single numeric value governs both multi-component-match reporting and tie-break stage (1). It is a constant in the codebase, not a tunable. **It is the "component cleared" threshold, not the feed-admission gate** (see §2a) — all 10 fixtures appear regardless of whether they clear any component at 0.60.
+- Implement `max(component_similarity)` ranking with the two-stage tie-break: (1) more components at or above the 0.60 threshold, (2) more recent date.
+- **Recency is a gate, not a ranking signal.** All fixtures are in-window (2025-12-06 → 2026-06-06) and eligible; age within the window never changes rank. Verify the window gate as an assertion even though all fixtures pass it.
+- **Tangential flag is orthogonal to ranking.** The flag (semantic judgment, gated by the 0.60 quantitative floor) is determined in Phase 2 and *annotates*; it never re-ranks. A flagged paper keeps its `max(component_similarity)` position. The scoring contract is untouched by flagging.
+- **Recommended action mapping (deterministic, derived from `max(component_similarity)`):**
+  - `Read now` — strongest component similarity ≥ 0.80.
+  - `Save` — strongest component similarity ≥ 0.60 and < 0.80.
+  - `Skip` — strongest component similarity < 0.60.
+  - **Strategy-originated cutoff note:** Requirements define recommended action as a required output (`Read now / Save / Skip`) but **do not specify numeric cutoffs**. The 0.80 Read-now cutoff and the 0.60/0.80 band boundaries are **strategy-level design decisions, not derived from requirements**. The reuse of 0.60 as the `Save` floor aligns with the "component cleared" constant but is itself a strategy choice; neither cutoff is the feed-admission gate, so this mapping does not conflict with pre-filter/eligibility semantics (a paper recommended `Skip`, e.g. PAP-10, still appears in the feed and still renders full per-paper output — see Phase 3).
+  - This mapping is a pure function of frozen scores, reproducible and testable exactly like the ranking. The LLM plays no part in it.
+- **Exit:** all 10 papers ranked 1–10, order is stable and reproducible, each position justifiable by the rule; recommended action assigned to every paper by the mapping above; "components cleared above threshold" is deterministic. Unit tests lock both the order and the recommended-action assignment.
 
-This is the operative constraint on the LLM: it is a structured-reasoning engine over a fixed framework, not a black-box ranker.
+### Phase 2A — LLM per-paper rationale batch
+- Batch-call the model (Message Batches API) for: per-component match explanation, relevance rationale, per-position rationale.
+- **Rationale-call context (required):** each per-paper call receives the paper's **abstract** and the matched component's **`evidence`** field. The rationale is grounded in actual content and in why the component exists — never inferred from the title alone.
+- **Depth vs. breadth (required prompt instruction):** the prompt must explicitly distinguish *depth* (strong single-thread match) from *breadth* (cross-component relevance). Because the sequencer ranks on `max(component_similarity)` — i.e. on depth — a breadth paper (e.g. PAP-02) must have its multi-thread relevance explained in prose so its rank is not misread as pure depth.
+- **Tangential-flag determination:** the LLM, reading abstract against matched-component `evidence`, judges substantive fit. The flag fires only on papers above the 0.60 floor whose fit is loose. PAP-07 is the canonical test case, not a special-cased paper — the same logic must be able to fire on any qualifying paper. A flagged paper's rationale must state the match is loose rather than overstate it.
+- **Instrumentation:** the depth/breadth classifier and each eval assertion are decorated with `@weave.op()` so they appear in the same Weave trace tree as the auto-instrumented SDK calls.
+- The LLM produces *only* these rationale types — rank and recommended action are already fixed by Phase 1 and passed into the prompt as given, not chosen by the model.
+- **Exit:** every paper has all three rationale types; tangential flag verified on PAP-07; depth/breadth framing verified present on PAP-02; rationale calls visible in Weave trace tree.
 
-### Model usage budget
+### Phase 2B — Feed summary (post-ranking call)
+- The `feed_summary` call runs **after** the sequencer has produced the order and **after** the per-paper batch — it takes the sorted top-N as input. It is not part of the per-paper batch and must not be issued before the ranking exists. This ordering constraint is enforced in code (the summary call cannot be reached without a completed ranking).
+- The summary names the 2–3 strongest papers and their collective significance — the editorial headline above the per-paper layer.
+- Auto-traced by Weave like every other Anthropic call.
+- **Exit:** `feed_summary` generated from the already-sorted top-N; call ordering verified (summary cannot run before ranking); summary visible in Weave trace tree.
 
-LLM calls are bounded and predictable. The ceiling is at most one structured extraction pass per event, plus one rationale-generation pass per event, plus one list-level sequencing pass that emits N per-position rationales. For a fixture of 7 events, that ceiling is 7 + 7 + 1 = 15 calls per full run. Extraction and rationale passes may be merged into a single call per event if prompt engineering supports it without degrading either output; in that merged configuration the floor is 7 + 1 = 8 calls per run. So the operative budget is **up to 15 calls, potentially as few as 8 if extraction and rationale are merged** — downstream architecture should plan against that explicit ceiling and floor. The "7 events total — do not exceed without re-budgeting model calls" constraint in the requirements is a hard ceiling on fixture growth precisely because it caps call volume. Whether to merge is an implementation tactic, not a strategic shift.
+### Phase 3 — Two-panel UI
+- Left feed panel, right detail panel, independent scroll, collapsible sections; collapsed sections retain enough height to show their section label.
+- **Feed summary at top of left panel**, above the ranked list — its own region with its own degraded state.
+- Primary (left, always visible): rank, title, top matched component label, recommended action.
+- Secondary (right detail): per-component similarity, relevance rationale (with depth/breadth framing), tangential flag if present, missing-information note (rendered for *every* paper, "nothing material missing" when applicable), per-position rationale.
+- **Every paper renders full per-paper output regardless of recommended action.** A `Skip`-actioned paper (e.g. PAP-10) is *not* dropped or hidden — it still appears at its score-determined rank and still renders its full detail view (component match(es) + per-component similarity, relevance rationale, recommended action, missing-information note, per-position rationale), consistent with the no-silent-drop and per-paper rendering rules.
+- Editorial visual treatment (dark background, bright legible type, serif paper titles) — built here, not deferred. Required deliverable, executed without iteration.
+- **Exit:** position 1 selected on load, all sections collapsed to label, full layout per spec, feed summary region rendered above the list; a `Skip` paper confirmed to render full detail.
 
-### Fixture as test harness
+### Phase 4 — Degraded-state hardening
+- Implement the failure contract: no blank panels, no silently dropped papers.
+  - A paper whose **rationale** failed renders at its score-determined rank with an explicit "rationale unavailable — retry" state.
+  - If **`feed_summary`** fails, the per-paper feed still renders in full; the summary region shows "summary unavailable — retry". The headline is never a single point of failure for the whole feed.
+  - Malformed JSON from any model call is caught, **logged via the observability layer (Weave/W&B)**, and surfaced as a retryable error on the relevant panel.
+- **Exit:** simulated LLM failures (per-paper and feed_summary, independently) render the correct retryable state at the right place without blanking or dropping; malformed-JSON path logged and surfaced.
 
-The fixture is not just example data; it is the acceptance test. The required coverage (must-attend, must-skip, ambiguous, missing-data, logistics-extreme, mid-tier) defines what the framework has to handle. If the framework produces a counterintuitive ranking on the fixture, the fixture wins until the framework — or the prompt encoding it — is revised to justify the ranking on those specific factors.
+### Phase 5 — Run logging & eval pass
+- **W&B run:** one `wandb` run per fixture/prompt iteration logs the pipeline-level aggregate — ranked output, component-similarity distributions, batch-call metadata (latency, token count, per-paper rationale status), and eval pass/fail results.
+- **Eval assertions** (each a `@weave.op()`): ranking matches the deterministic contract; PAP-07 flagged loose; PAP-02 carries breadth framing; recommended-action mapping correct; missing-info note present on every paper; every paper (including `Skip`-actioned PAP-10) renders full per-paper output.
+- **Exit:** one clean W&B run logged with aggregate metrics and eval results; Weave trace tree and W&B run cross-reference the same iteration.
 
-### Disposable code, durable framework
+---
 
-Implementation choices (language, framework, component library) optimize for fastest path to a working two-panel dashboard on the architect's laptop. The code is expected to be thrown away or heavily rewritten if the framework changes. The framework — the factor lists, their categorization, the composite logic, the rationale style, and the prompts that encode them — is the durable artifact and should be documented in plain language alongside the code.
+## 4. Key Risks & Mitigations
 
-### Visual treatment as fixed requirement
+| Risk | Mitigation |
+|---|---|
+| LLM overstates a tangential match (PAP-07) | Explicit prompt instruction + verification check in Phase 2A exit; flag gated by 0.60 floor |
+| Tangential flag silently re-ranks instead of annotating | Flag is orthogonal to ranking by construction (Phase 1); a flagged paper keeps its score position; eval asserts position unchanged |
+| Breadth paper's rank misread as depth (PAP-02) | Required depth/breadth prompt instruction; Phase 2A exit verifies framing present |
+| `feed_summary` issued before ranking exists | Call ordering enforced in code (Phase 2B); summary unreachable without a completed sequence |
+| `feed_summary` failure blanks the whole feed | Degraded-state contract: per-paper feed renders independently; summary region degrades alone (Phase 4) |
+| Scores drift / ranking becomes non-reproducible | Ranking is a pure function over frozen fixtures; locked by unit tests |
+| Recommended action becomes inconsistent / non-reproducible | Deterministic threshold-based mapping in Phase 1; locked by unit tests, never an LLM output |
+| Two thresholds conflated (admission gate vs. "component cleared") | §2a disambiguates them; 0.60 is "component cleared" only, never the feed-admission gate; all 10 fixtures pre-admitted, so PAP-10 is not contradicted by its must-rank-low role |
+| Strategy-originated cutoffs (0.60 component-cleared, 0.80 Read-now) mistaken for requirements | Flagged explicitly in §2a and Phase 1 as strategy-level decisions, not requirements-derived; confirmed not to conflict with eligibility semantics |
+| `Skip`-actioned paper wrongly dropped or hidden | Phase 3 and Phase 5 eval assert every paper (incl. PAP-10) renders full per-paper output regardless of action; no-silent-drop holds |
+| Threshold left implicit, tie-break untestable | "Component cleared" threshold fixed at 0.60 as a code constant in Phase 1; unit tests cover multi-component and tie-break cases |
+| Rationale reasons from title, not content | Rationale-call context mandates abstract + component `evidence` (Phase 2A); never title-only |
+| Visual treatment demoted to "stretch" under time pressure | Requirements forbid this; Phase 3 treats it as core exit criteria |
+| `WANDB_API_KEY` hardcoded or committed | `.env` gitignored, confirmed in Phase 0 before any commit; key never in source |
+| Observability bolted on late / incompletely | Weave wired in Phase 0; `@weave.op()` decoration in Phase 2; W&B run + evals in Phase 5 — instrumentation is a phase, not an afterthought |
+| Malformed model JSON crashes a panel | Degraded-state contract in Phase 4; caught, logged to observability, surfaced as retryable |
+| Scope creep into production pipeline | Explicit out-of-scope list; no live API calls permitted |
 
-The dark-background / bright-bold-font / high-tech-futuristic-space-age treatment is a required deliverable per the requirements, not a stretch goal and not negotiable downstream. Strategically this means: pick a palette and a typeface early, commit, and execute without iteration. It also means the visual treatment is *bounded* — it is a one-shot styling pass, not an ongoing design track that competes with framework work for attention.
+---
 
-## Risks and how they're managed
+## 5. Definition of Done
 
-- **Risk: framework looks reasonable in the abstract but produces bad rankings on real events.** Mitigation: build the fixture before the ranking logic is finalized; let the seven real cases pressure-test the framework and revise the framework, not the fixture.
-- **Risk: LLM produces plausible-sounding rationales that don't actually reference the factor framework.** Mitigation: structure the rationale-generation prompt to cite specific factors by name from the framework; reject outputs that don't. Treat this as a correctness check on the LLM output, not a stylistic preference.
-- **Risk: LLM-driven ranking is non-deterministic across runs, undermining the architect's ability to audit it.** Mitigation: low-temperature settings on the sequencing call, structured output schemas, and persisted run outputs so a given fixture run can be re-read rather than re-rolled. The architect audits a snapshot, not a live oracle.
-- **Risk: missing-data events get optimistically ranked because absent negatives look like positives.** Mitigation: missing-data conservatism is a first-class rule in the sequencer prompt, and a missing-information section is a required per-event output for every event (empty where the listing is complete), not optional and not reserved for the flagged cases.
-- **Risk: urgency gets underweighted in favor of value or composite cleanliness.** Mitigation: urgency is named as a first-class composite input in the sequencer prompt alongside value, logistics cost, and missing-data conservatism, and per-position rationales must cite it where it affects placement relative to neighbors.
-- **Risk: dashboard polish absorbs time that should go to framework iteration.** Mitigation: dashboard is locked to the spec — two panels, collapsibility, dark theme, defaults — and no scope is added until the framework survives the fixture.
-- **Risk: the "futuristic" aesthetic becomes a rabbit hole.** Mitigation: pick a palette and a typeface early, commit, move on. Aesthetic is a one-shot decision, not an iteration target — and it is a requirement, so it cannot be cut, but it also cannot be expanded.
+- All 10 papers ranked into a single feed, position 1–10, each defensible by the scoring contract.
+- Two thresholds disambiguated (§2a): no numeric feed-admission cutoff is applied in this POC (all 10 fixtures are pre-admitted canonical input, including PAP-10); the **"component cleared" threshold is fixed at 0.60** as a strategy-level code constant governing only multi-component reporting and tie-break stage (1). "Components cleared above threshold" is deterministic and unit-tested.
+- Recency confirmed as a gate only — never a ranking signal; all fixtures verified in-window.
+- Recommended action (`Read now / Save / Skip`) assigned to every paper by the deterministic threshold mapping (0.80 Read-now / 0.60–0.80 Save / <0.60 Skip — strategy-originated cutoffs, not requirements-derived), reproducible and unit-tested.
+- Every paper renders full per-paper output — component match(es) + per-component similarity, relevance rationale (with depth/breadth framing), recommended action, missing-information note (always present), per-position rationale — **regardless of recommended action**; `Skip`-actioned papers (e.g. PAP-10) are not dropped or hidden.
+- Tangential near-miss (PAP-07) is explicitly flagged as loose in its rationale, and the flag annotates without changing rank.
+- `feed_summary` generated from the sorted top-N *after* ranking, renders at the top of the left panel, and degrades independently of the per-paper feed.
+- Two-panel editorial UI matches the output-surface spec, including default state and visual treatment.
+- Degraded-state contract holds under simulated LLM failure for both per-paper rationale and feed_summary, independently.
+- Observability complete: Weave traces every Anthropic call and every `@weave.op()` team function; one W&B run logs aggregate metrics + eval results; both share the single gitignored `.env` key.
+- No production-pipeline code, no live OpenAlex/arXiv/OpenAI calls.
 
-## Success criteria
+---
 
-The prototype is done when:
+## 6. Explicit Non-Goals
 
-1. Seven real lu.ma events are loaded as a fixture, covering the required case mix.
-2. Each event has a complete factor assessment (including an always-rendered missing-information section), an Attend/Consider/Skip action, a rationale that cites specific factors, and a follow-up checklist — all produced by LLM calls against the explicit framework.
-3. The ranked list orders all seven from highest to lowest priority, with one rationale per position explaining that position against value, logistics cost, urgency from event date proximity, and missing-data conservatism.
-4. The dashboard renders the two-panel layout with the specified defaults, behavior, and dark futuristic visual treatment on the architect's laptop.
-5. The architect, reviewing the output, can point to at least one event where the framework surfaced a consideration he would not have weighted as heavily on his own — evidence that the framework is doing work, not just confirming priors.
+- No validation against real researchers, papers, or third parties.
+- No citation-graph, venue-quality, or duplicate-detection signals (out of rubric scope).
+- No recency-based ranking (recency is a gate only).
+- No live embedding or similarity computation (fixtures are canonical).
+- No numeric feed-admission cutoff applied in this POC (fixtures are the canonical, pre-admitted input; 0.60 is the "component cleared" threshold, not the admission gate).
+- No LLM-driven ranking or recommended-action selection (both are deterministic functions of frozen scores).
+- No tangential-flag re-ranking (flag annotates only; ranking is orthogonal).
+- No dropping or hiding of `Skip`-actioned papers (every in-feed paper renders full per-paper output).
+- No application-model selection for the Claude Code build session (model ID governs the built artifact's runtime only, advisory on the build environment).
+- No multi-user, no persistence beyond the session, no auth.
 
 Existing ARCHITECTURE.md:
 # ARCHITECTURE.md
+
+## Atomic Research — Paper Relevance Feed: Component Architecture
+
+This document specifies what components exist and how they wire together. It executes STRATEGY.md; it does not relitigate decisions made there (model ID, deterministic ranking, degraded-state contract, the 0.60 threshold constant).
+
+---
+
+## 0. Architectural Confirmation & Adjustment
+
+The agentic-harness template assumes the LLM produces the consequential judgment (triage, scoring, classification) and a guardrail enforces conservative bias on that judgment. **This scenario inverts that assumption.** Here:
+
+- **Ranking and recommended action are deterministic, LLM-free pure functions** over frozen fixtures (STRATEGY §1, §3 Phase 1).
+- **The LLM produces only explanatory prose** — three rationale types per paper. It never decides rank or action.
+
+Consequently, the architecture **adapts the template** as follows:
+
+| Template component | Disposition in this build |
+|---|---|
+| orchestrator.js | **Kept**, adapted — sequences deterministic compute → batch LLM call → assembly. Does not fan out one subagent per case. |
+| subagent.js | **Kept**, adapted — wraps the Anthropic Batches API, not a per-case tool-use loop. |
+| skills/primary.js | **Kept**, adapted — the rationale-generation skill (prose only, no ranking). |
+| skills/guardrail.js | **Dropped.** No consequential LLM judgment to wrap. The honesty requirement (PAP-07 tangential flag) is a prompt instruction + deterministic verification check, not a two-pass escalate-only guardrail. The escalate-only invariant has no referent when the LLM decides nothing. |
+| skills/sequencer.js | **Kept as a pure function, LLM-free.** The domain verb (rank) implies ordering, but ordering is mechanical here. This is `sequencer.ts` in the compute layer, not a skill. |
+| eval.js | **Kept** — schema gate + sanity checks (rank stability, action-mapping correctness, PAP-07 tangential flag present). |
+| memory.js | **Dropped for v1.** Batch call with deterministic retry; no per-case failure-context replay needed. Degraded-state contract (Phase 4) handles failure surfacing instead. |
+| logger.js | **Kept** — JSONL trace per run. |
+
+This is a deliberate, documented divergence. The guardrail spec does not apply because no LLM judgment is consequential.
+
+---
+
+## 1. Pipeline Shape — Three Stages, File-Based Handoffs
+
+Stage boundaries are files, not live connections. The pipeline writes; the server serves; the client reads.
+
+**INPUT** — versioned fixtures at `data/researcher_profile.json` and `data/candidate_papers.json`. Built and validated before any application component is written (Slice 0 / INPUT gate). Read by the pipeline; never modified during a run. Contains one researcher profile and 10 candidate papers with frozen `component_similarity` scores.
+
+**PIPELINE** — `run.ts` + orchestrator + subagent + rationale skill + deterministic sequencer + eval. Reads INPUT, produces OUTPUT. Deterministic ranking/action assignment, the single batch LLM call, schema validation, and assembly all happen here. Writes OUTPUT exactly once per run, after eval gates pass.
+
+**OUTPUT** — single validated artifact at `public/output_data.json`. Written by `run.ts` after eval gates pass; never modified after write. The dashboard reads this file via the dashboard server.
+
+No data flow between stages at render time. The dashboard renders finalized output; it does not score, rank, or call the LLM.
+
+---
+
+## 2. Output Schema (per paper)
+
+Proposed JSON shape for one paper in the output array. This is the per-paper output contract Ajv enforces.
+
+```json
+{
+  "paper_id": "PAP-03",
+  "rank": 1,
+  "title": "...",
+  "date": "2024-11-02",
+  "max_component_similarity": 0.87,
+  "recommended_action": "Read now",
+  "components": [
+    {
+      "component": "Sparse autoencoder feature steering",
+      "component_similarity": 0.87,
+      "cleared": true,
+      "match_explanation": "<LLM prose>"
+    },
+    {
+      "component": "RLHF reward modeling",
+      "component_similarity": 0.42,
+      "cleared": false,
+      "match_explanation": "<LLM prose>"
+    }
+  ],
+  "components_cleared_count": 1,
+  "relevance_rationale": "<LLM prose>",
+  "position_rationale": "<LLM prose>",
+  "tangential_flag": false,
+  "missing_information": "<note or null>",
+  "rationale_status": "ok"
+}
+```
+
+Field provenance:
+
+- **Deterministic (Phase 1, no LLM):** `rank`, `max_component_similarity`, `recommended_action`, `cleared`, `components_cleared_count`.
+- **LLM-generated (Phase 2):** `match_explanation` (per component), `relevance_rationale`, `position_rationale`.
+- **`tangential_flag` — prompt instruction + verification, per STRATEGY:** STRATEGY frames the tangential-near-miss honesty requirement as a prompt instruction plus a verification check, **not** a general deterministic similarity-band classifier. There is no defined similarity band for "tangential," and this architecture introduces none. Accordingly: the flag is asserted in the prompt (the model must explicitly frame PAP-07's match as loose/tangential), and the eval verification check confirms **PAP-07 carries `tangential_flag === true` with tangential framing in its rationale**. No general band rule is applied to other papers; absent a verified tangential framing, the flag defaults to `false`.
+- **Degraded-state (Phase 4):** `rationale_status` ∈ `ok | unavailable | malformed`. When not `ok`, prose fields carry a retryable placeholder; deterministic fields remain valid.
+
+### Model-call estimate
+
+The pipeline uses the **Message Batches API** with **one rationale request per paper**: **10 model calls total**, submitted as a single batch. No nesting (no per-component sub-calls — all three rationale types for a paper are produced in one structured response). This is latency-insensitive by design and well within Batches API rate limits for a 10-request submission. (REQUIREMENTS.md owns any explicit numeric cap; the cap value is not reproduced here to avoid asserting an unverifiable figure — the 10-call total is stated as the concrete pipeline cost.)
+
+---
+
+## 3. First Slice (smallest end-to-end)
+
+Per template stage gates, adapted for this inverted build:
+
+1. **Slice 0 — INPUT gate.** `data/researcher_profile.json` + `data/candidate_papers.json` exist and validate against the input schema. No application component before this passes.
+2. **First runnable slice:** `run.ts` → `sequencer.ts` (deterministic rank + action for all 10) → `subagent.ts` (batch call for **one** paper's rationale) → `eval.ts` (schema gate) → write OUTPUT for that one paper.
+3. Defer the full 10-paper batch, the PAP-07 tangential verification, and degraded-state handling until the one-paper path runs clean end-to-end.
+4. **OUTPUT gate.** `public/output_data.json` validates against the output schema before the dashboard slice begins.
+5. Dashboard is the final phase. It renders finalized output only.
+
+---
+
+## 4. New Dependencies
+
+| Dependency | Purpose |
+|---|---|
+| `@anthropic-ai/sdk` | Anthropic Message Batches API client |
+| `ajv` | JSON Schema validation (input fixtures + per-paper output contract) |
+| `typescript` + `tsx` (or `ts-node`) | Type-safe build per STRATEGY §2; run `.ts` directly |
+
+No other runtime dependencies. Styling is hand-authored CSS (STRATEGY §2). No production-pipeline libraries (OpenAlex/arXiv/embeddings explicitly out of scope).
+
+---
+
+## 5. Component Architecture
+
+### Compute layer (deterministic, LLM-free)
+
+1. **sequencer.ts** — pure function. Takes the 10 candidate papers with frozen scores, returns the ranked array with `rank`, `max_component_similarity`, `recommended_action`, `cleared` per component, and `components_cleared_count`. Implements:
+   - `max(component_similarity)` ranking.
+   - Two-stage tie-break: (1) more components with `component_similarity ≥ 0.60`, (2) more recent date.
+   - Recommended-action mapping: `≥ 0.80 → Read now`, `≥ 0.60 && < 0.80 → Save`, `< 0.60 → Skip`.
+   - `THRESHOLD = 0.60` as a single code constant (STRATEGY §1 Phase 1). Not tunable.
+   - Fully unit-tested for order stability and action-mapping correctness.
+   - **Note:** `tangential_flag` is *not* set here. There is no deterministic similarity band for tangentiality (see §2); the flag is driven by the prompt + verified at eval for PAP-07, defaulting to `false` otherwise.
+
+### Pipeline layer
+
+2. **orchestrator.ts** — sequences the run: invokes `sequencer.ts` (deterministic), passes the ranked array into the batch rationale call, assembles per-paper records merging deterministic fields with LLM prose, runs eval, hands the validated array to `run.ts` for writing. Does **not** fan out per-case subagents; the batch API handles the 10 requests in one submission.
+
+3. **subagent.ts** — wraps the Anthropic Message Batches API. Submits one rationale request per paper (10 in a batch), polls for completion, parses structured responses. Anthropic client initialized with `maxRetries: 3`. Receives `rank` and `recommended_action` as **given input** — never asked to decide them.
+
+### Skills
+
+4. **skills/rationale.ts** — the primary (and only) skill. Exports the four-part skill contract:
+   - `name`: `"rationale-generation"`.
+   - `systemPrompt`: guidance + output schema for the three rationale types (per-component match explanation, relevance rationale, per-position rationale). Includes the **tangential-honesty instruction**: PAP-07's loose/tangential match must be explicitly flagged as such; the model must not overstate it (STRATEGY §3 Phase 2, §4 risk row).
+   - `tools`: `[]` (none — pure prose generation).
+   - `successCriteria.validate`: asserts all three rationale types present and non-empty per paper; asserts PAP-07 rationale carries the tangential framing.
+
+   **No guardrail skill.** Per §0, the escalate-only guardrail has no referent: the LLM decides no rank and no action. The honesty requirement is enforced by prompt instruction + the deterministic eval check below, not a two-pass guardrail.
+
+### Eval
+
+5. **eval.ts** — gates, aggregate errors (no short-circuit):
+   - `validateSchema` — every paper matches the per-paper output contract (Ajv).
+   - `sanityCheck`:
+     - All 10 papers ranked 1–10, no gaps, no duplicates.
+     - Rank order matches the deterministic rule (recomputed and compared).
+     - Recommended-action mapping correct for every paper (recomputed and compared).
+     - `components_cleared_count` matches count of components with `component_similarity ≥ 0.60`.
+     - **PAP-07 `tangential_flag === true`** and its rationale carries the tangential framing (STRATEGY §3 Phase 2 exit). This is the verification check that backs the prompt-driven tangential requirement — there is no general band rule to recompute.
+   - On failure: errors aggregated and reported; OUTPUT not written.
+
+### Log trace
+
+6. **logger.ts** — JSONL trace per run, `traceId` threaded through orchestrator → subagent → eval. Records batch submission, completion, eval results.
+
+### Application entry
+
+7. **run.ts** — CLI entry. `node --import tsx src/run.ts [data/candidate_papers.json]`. On a clean run (eval gates pass), writes `public/output_data.json` and exits. On eval failure, writes nothing and reports.
+
+### Degraded-state handling (Phase 4)
+
+8. **Degraded-state contract** — not a separate file but a cross-cutting behavior in `subagent.ts` + `orchestrator.ts`:
+   - Malformed model JSON for a paper is caught, logged, and surfaced as `rationale_status: "malformed"`.
+   - Missing/unavailable rationale → `rationale_status: "unavailable"`.
+   - Deterministic fields (rank, action) always remain valid — a rationale failure never drops a paper or blanks a panel.
+   - The paper renders at its correct rank with a retryable placeholder in prose fields.
+
+---
+
+## 6. Dashboard Architecture
+
+Four files with explicit responsibilities. The server validates the OUTPUT artifact at startup; if validation fails, the dashboard does not start. No partial-success state.
+
+9. **dash-app-server.ts** — Node/Express. Reads `public/output_data.json`, validates it against the output schema, exposes API endpoints to the client. The only component that touches the data file. ESM main-module guard (`import.meta.url === pathToFileURL(process.argv[1]).href`) so the HTTP server only starts when run directly, not when imported in tests.
+
+10. **dash-app-client.ts** — consumes the server's API endpoints. Never reads the data file directly. Holds all rendering, selection, expansion, and scroll logic.
+
+11. **dash-app.html** — markup only. No inline styles. No inline scripts beyond loading the client module.
+
+12. **dash-app.css** — external stylesheet. Editorial visual treatment (dark theme, serif titles) per STRATEGY §3 Phase 3. No styling lives in HTML or JS.
+
+---
+
+## 7. Dashboard Layout Invariants
+
+- **Panel structure:** two-panel (left feed, right detail) per STRATEGY §3 Phase 3.
+- **Left panel:** lists all 10 papers in sequencer rank order (1→10), top to bottom, selectable. **Position 1 selected by default on load** (STRATEGY §3 Phase 3 exit).
+- **Right panel:** displays the detail sub-sections for the selected paper — component match(es) + per-component similarity, relevance rationale, recommended action, missing-information note, per-position rationale.
+- **Default expansion:** all right-panel sub-sections load **collapsed to their label** (STRATEGY §3 Phase 3 exit).
+- **Independent scroll:** both panels scroll independently.
+- **Collapsed minimum height:** fixed minimum height sufficient to show the section label.
+- **Degraded-state rendering:** a paper with `rationale_status` ≠ `ok` still renders at its correct rank; prose sections show the retryable placeholder, never a blank panel (STRATEGY §3 Phase 4).
+
+---
+
+## 8. Build Order Summary
+
+| Phase | Components | Gate |
+|---|---|---|
+| **0 — Scaffold & fixtures** | `data/*.json`, input schema, output schema, Ajv wired | Fixtures load + validate; malformed entry rejected (INPUT gate) |
+| **1 — Deterministic sequencer & action** | `sequencer.ts` + unit tests | All 10 ranked 1–10, stable; action mapping correct; threshold 0.60 locked |
+| **2 — LLM rationale** | `subagent.ts`, `skills/rationale.ts`, `orchestrator.ts`, `eval.ts`, `run.ts`, `logger.ts` | Every paper has 3 rationale types; PAP-07 tangential flag verified; OUTPUT validates (OUTPUT gate) |
+| **3 — Two-panel UI** | `dash-app-server.ts`, `dash-app-client.ts`, `dash-app.html`, `dash-app.css` | Position 1 selected on load; all sections collapsed; editorial treatment present |
+| **4 — Degraded-state hardening** | degraded-state behavior in `subagent.ts` + `orchestrator.ts` + client rendering | Simulated LLM failure renders retryable state at correct rank; no dropped papers, no blank panels |
+
+---
+
+## 9. Documented Divergences from Template
+
+1. **No guardrail skill / no escalate-only flow.** The template's two-pass guardrail enforces conservative bias on a consequential LLM judgment. Here the LLM makes no consequential judgment — rank and action are deterministic. The guardrail spec has no referent and is dropped. The one honesty concern (PAP-07 tangential framing) is handled by prompt instruction + deterministic eval check.
+2. **No per-case fan-out.** The template fans out one subagent per case via `Promise.all`. This build uses the Message Batches API, submitting all 10 rationale requests in one batch — better fit for a latency-insensitive, cost-sensitive POC (STRATEGY §2).
+3. **`memory.js` dropped for v1.** No per-case failure-context replay; the degraded-state contract handles failure surfacing, and the batch call has deterministic SDK-level retry.
+4. **Sequencer is a pure compute function, not an LLM skill.** The domain verb (rank) implies ordering, but ordering is mechanical over frozen scores — so it lives in the compute layer, unit-tested, never an LLM surface.
+
+These divergences follow directly from STRATEGY's core principle: **the ranking is deterministic and LLM-free; the explanations are LLM-driven.**

@@ -11,7 +11,7 @@ const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 export async function generate({ system, user }) {
   const message = await client.messages.create({
     model: ANTHROPIC_MODEL,
-    max_tokens: 8192,
+    max_tokens: 16384,
     system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
     messages: [{ role: 'user', content: user }],
   });
