@@ -21,14 +21,17 @@ Read this before drafting requirements for your own project. It encodes the requ
 
 ## Quick start 
 
-1. Copy `/TARGET/context-docs/` from the console project into your target project root so workflow lives at `<project>/context-docs/workflow/`.
-2. Pick a template from `/TARGET/template-library/` and drop it in your target project at `<project>/context-docs/template/`.
+
+
+1-a. Clone https://github.com/docraticmethod/cascadia-harness-node and rename as your new "target" project
+1-b. Copy `/TARGET/context-docs/` from the console project into your target project root so workflow lives at `<project>/context-docs/workflow/`.
+2. Pick a template from `/TARGET/template-library/` and drop it in your target project at `<project>/context-docs/template/`. Rename it to "ARCHITECTURE_TEMPLATE.md".
 3. Create `.env`:
 ```
 TARGET_WORKFLOW=/absolute/path/to/<project>/context-docs/workflow 
 TARGET_TEMPLATE=/absolute/path/to/<project>/context-docs/template 
 ANTHROPIC_API_KEY=sk-... 
-ANTHROPIC_MODEL=claude-opus-4-7 
+ANTHROPIC_MODEL=claude-opus-4-8 
 PORT=3001
 ```
 4. `npm install && node src/server.js`
