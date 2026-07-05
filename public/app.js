@@ -21,10 +21,15 @@ const GENERATE_TARGET = {
   strategy: 'architecture',
   architecture: 'system_instructions',
 };
+const GENERATE_LABEL = {
+  requirements: 'GENERATE STRATEGY',
+  strategy: 'GENERATE ARCHITECTURE',
+  architecture: 'GENERATE SYSTEM INSTRUCTIONS',
+};
 
 const state = {};
 for (const tab of TABS) {
-  state[tab] = { mode: 'locked', action: null, content: '', flags: [], loaded: false, fixApplied: false };
+  state[tab] = { mode: 'viewing', action: null, content: '', flags: [], loaded: false, fixApplied: false };
 }
 
 let activeTab = 'requirements';
@@ -45,16 +50,12 @@ function buildUI() {
     <section class="tab-panel" id="panel-${tab}">
       <div class="flags" id="flags-${tab}"></div>
       <div class="controls">
-        <label class="unlock-label">
-          <input type="checkbox" id="unlock-${tab}" onchange="onUnlock('${tab}', this.checked)">
-          <span id="unlock-label-text-${tab}">Unlock</span>
-        </label>
         <button id="btn-add-${tab}" class="btn" onclick="onAdd('${tab}')" disabled>ADD</button>
         <button id="btn-edit-${tab}" class="btn" onclick="onEdit('${tab}')" disabled>EDIT</button>
-        <button id="btn-submit-${tab}" class="btn btn-primary" onclick="onSubmit('${tab}')" disabled>SUBMIT</button>
+        ${GENERATE_LABEL[tab] ? `<button id="btn-generate-${tab}" class="btn btn-primary" onclick="onGenerate('${tab}')" disabled>${GENERATE_LABEL[tab]}</button>` : ''}
       </div>
       <div id="doc-view-${tab}" class="doc-view"><span class="placeholder">Loading…</span></div>
-      <textarea id="textarea-${tab}" class="doc-textarea" style="display:none"></textarea>
+      <textarea id="textarea-${tab}" class="doc-textarea" style="display:none" oninput="onContentInput('${tab}')"></textarea>
       <div id="spinner-${tab}" class="spinner" data-msg="" style="display:none"></div>
     </section>
   `).join('');
@@ -105,87 +106,52 @@ function renderFlags(tab) {
       <span class="flag-fix-hint">${esc(f.suggested_fix)}</span>
     </div>
   `).join('');
-  const fixBtn = s.fixApplied ? '' : `<button class="btn btn-danger" onclick="onFix('${tab}')">Fix</button>`;
+  const fixBtn = s.fixApplied
+    ? `<button class="btn btn-fixed" disabled>FIXED ALL</button>`
+    : `<button class="btn btn-danger" onclick="onFix('${tab}')">FIX ALL</button>`;
   container.innerHTML = rows + fixBtn;
+}
+
+function effectiveContent(tab) {
+  const s = state[tab];
+  if (s.mode === 'editing') {
+    return document.getElementById(`textarea-${tab}`).value;
+  }
+  return s.content;
+}
+
+function onContentInput(tab) {
+  if (state[tab].mode === 'editing') updateUI(tab);
 }
 
 function updateUI(tab) {
   const s = state[tab];
-  const unlockCb = document.getElementById(`unlock-${tab}`);
-  const labelText = document.getElementById(`unlock-label-text-${tab}`);
   const btnAdd = document.getElementById(`btn-add-${tab}`);
   const btnEdit = document.getElementById(`btn-edit-${tab}`);
-  const btnSubmit = document.getElementById(`btn-submit-${tab}`);
+  const btnGenerate = document.getElementById(`btn-generate-${tab}`);
   const textarea = document.getElementById(`textarea-${tab}`);
   const view = document.getElementById(`doc-view-${tab}`);
+  const hasContent = effectiveContent(tab).trim().length > 0;
 
-  if (s.mode === 'locked') {
-    unlockCb.checked = false;
-    labelText.textContent = 'Unlock';
-    unlockCb.disabled = false;
+  if (s.mode === 'submitting') {
     btnAdd.disabled = true;
     btnEdit.disabled = true;
-    btnSubmit.disabled = true;
-    textarea.style.display = 'none';
-    view.style.display = '';
-  } else if (s.mode === 'unlocked') {
-    unlockCb.checked = true;
-    labelText.textContent = 'Unlock';
-    unlockCb.disabled = false;
-    btnAdd.disabled = false;
-    btnEdit.disabled = !s.content;
-    btnSubmit.disabled = true;
+    if (btnGenerate) btnGenerate.disabled = true;
     textarea.style.display = 'none';
     view.style.display = '';
   } else if (s.mode === 'editing') {
-    unlockCb.checked = false;
-    labelText.textContent = 'Lock';
-    unlockCb.disabled = false;
     btnAdd.disabled = true;
     btnEdit.disabled = true;
-    btnSubmit.disabled = true;
+    if (btnGenerate) btnGenerate.disabled = !hasContent;
     textarea.readOnly = false;
     textarea.style.display = '';
     view.style.display = 'none';
-  } else if (s.mode === 'ready') {
-    unlockCb.checked = true;
-    labelText.textContent = 'Lock';
-    unlockCb.disabled = false;
-    btnAdd.disabled = true;
-    btnEdit.disabled = true;
-    btnSubmit.disabled = false;
-    textarea.readOnly = true;
-    textarea.style.display = '';
-    view.style.display = 'none';
-  } else if (s.mode === 'submitting') {
-    unlockCb.disabled = true;
-    btnAdd.disabled = true;
-    btnEdit.disabled = true;
-    btnSubmit.disabled = true;
+  } else {
+    btnAdd.disabled = false;
+    btnEdit.disabled = !s.content;
+    if (btnGenerate) btnGenerate.disabled = !hasContent;
     textarea.style.display = 'none';
     view.style.display = '';
-  }
-}
-
-function onUnlock(tab, checked) {
-  const s = state[tab];
-  if (s.mode === 'editing') {
-    s.mode = 'ready';
-    const textarea = document.getElementById(`textarea-${tab}`);
-    s.pendingContent = textarea.value;
-    renderView(tab);
-    updateUI(tab);
-  } else if (s.mode === 'ready' && !checked) {
-    s.mode = 'editing';
-    updateUI(tab);
-  } else if (checked) {
-    s.mode = 'unlocked';
-    updateUI(tab);
-  } else {
-    s.mode = 'locked';
-    s.action = null;
-    s.pendingContent = null;
-    updateUI(tab);
   }
 }
 
@@ -198,7 +164,6 @@ function onAdd(tab) {
   textarea.readOnly = false;
   textarea.style.display = '';
   document.getElementById(`doc-view-${tab}`).style.display = 'none';
-  document.getElementById(`unlock-label-text-${tab}`).textContent = 'Lock';
   updateUI(tab);
 }
 
@@ -211,21 +176,26 @@ function onEdit(tab) {
   textarea.readOnly = false;
   textarea.style.display = '';
   document.getElementById(`doc-view-${tab}`).style.display = 'none';
-  document.getElementById(`unlock-label-text-${tab}`).textContent = 'Lock';
   updateUI(tab);
 }
 
-async function onSubmit(tab) {
+async function onGenerate(tab) {
   const s = state[tab];
   const textarea = document.getElementById(`textarea-${tab}`);
+  const editing = s.mode === 'editing';
+
+  if (!s.action) s.action = 'edit';
 
   let newContent;
-  if (s.action === 'add') {
-    const payload = s.pendingContent ?? textarea.value;
+  if (editing && s.action === 'add') {
+    const payload = textarea.value;
     newContent = s.content ? `${s.content}\n\n${payload}` : payload;
-    s.pendingPayload = s.pendingContent ?? textarea.value;
+    s.pendingPayload = payload;
+  } else if (editing) {
+    newContent = textarea.value;
+    s.pendingPayload = newContent;
   } else {
-    newContent = s.pendingContent ?? textarea.value;
+    newContent = s.content;
     s.pendingPayload = newContent;
   }
 
@@ -246,7 +216,7 @@ async function onSubmit(tab) {
 
     const next = NEXT_TAB[tab];
     if (!next) {
-      s.mode = 'locked';
+      s.mode = 'viewing';
       s.action = null;
       s.flags = [];
       renderView(tab);
@@ -272,20 +242,20 @@ async function onSubmit(tab) {
       body: JSON.stringify({ content: genData.generated_content }),
     });
 
-    s.mode = 'locked';
+    s.mode = 'viewing';
     s.action = null;
     s.flags = [];
     state[next].content = genData.generated_content;
     state[next].flags = genData.flags || [];
     state[next].fixApplied = false;
     state[next].loaded = true;
-    state[next].mode = 'locked';
+    state[next].mode = 'viewing';
 
     spinner.style.display = 'none';
     switchTab(next);
   } catch (err) {
     spinner.style.display = 'none';
-    s.mode = 'unlocked';
+    s.mode = 'viewing';
     updateUI(tab);
     console.error('Submit failed:', err);
   }
