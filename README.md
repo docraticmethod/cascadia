@@ -1,19 +1,21 @@
-# Cascadia Console v2.0.0
+# Cascadia Console v2.0.0 
 
-Spec-driven build system for coding agents. Apache-2.0.
+## Spec-driven build system for coding agents. Apache-2.0.
 
-You write the spec. Cascadia writes the build instructions.
+### The thing that builds the thing for the thing to build the thing. 
 
-Your agent writes the code. 
+#### You write the spec. Cascadia writes the build instructions.
 
-> The thing that builds the thing for the thing to build the thing. 
+#### Your agent writes the code. 
 
-Attach it to your harness.
+Workflow for your Vibe. Attach it to your harness.
 
-**Creator & Author:** Blake Rogers
-**Email:** saltyfog@gmail.com
-**LinkedIn:** https://www.linkedin.com/in/blakerogerz/
-**Medium:** wings.medium.com
+## About the Creator
+
+- **Author:** Blake Rogers
+- **Email:** saltyfog@gmail.com
+- **LinkedIn:** https://www.linkedin.com/in/blakerogerz/
+- **Medium:** wings.medium.com
 
 Applied AI Architect & Engineer | 20x | Fractional / Interim CTO | Agentic Orchestration & Spec-Driven Dev / Harness | Production AI on GCP | HIPAA-Compliant Healthtech ⛵️ I like boats.
 
@@ -21,7 +23,7 @@ Applied AI Architect & Engineer | 20x | Fractional / Interim CTO | Agentic Orche
 
 **Hackathons** (live, judged, public)
 - **Atomic Research** — WeaveHacks 4 — agent research team that triages what deserves a researcher's attention · [repo](https://github.com/docraticmethod/atomic-research)
-- **Doctor's Orders** — Legion Health — agentic patient assistant drafting insurance preauth + denial-appeal letters · [repo](https://github.com/docraticmethod/doctors-order) https://doctors-order.vercel.app/
+- **Doctor's Orders** — Legion Health — agentic patient assistant drafting insurance preauth + denial-appeal letters · [repo](https://github.com/docraticmethod/doctors-order)
 
 **Reference POCs**
 - Emergency Department triage
