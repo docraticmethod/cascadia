@@ -25,7 +25,7 @@ export async function generateArchitecture({ action, payload }) {
   const user = `STRATEGY.md:\n${strategy}\n\n${action === 'add' ? `New content added:\n${payload}\n\n` : ''}Existing ARCHITECTURE.md:\n${existingArchitecture || '(empty)'}`;
   
   // DEBUG: inside generateArchitecture, before the generate() call:
-  writeFileSync('tmp/arch-prompt.txt', system + '\n\n---USER---\n\n' + user);
+  //writeFileSync('tmp/arch-prompt.txt', system + '\n\n---USER---\n\n' + user);
 
   return generate({ system, user });
 }
